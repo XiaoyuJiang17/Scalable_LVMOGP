@@ -262,6 +262,8 @@ def train_and_eval_multiIndepSVGP_model(
     To train multiple IGPs, we need to reconstruct datasets based on them.
     '''
     results_txt = f'{results_folder_path}/results.txt'
+    with open(results_txt, 'w') as file:
+        file.write(f'Results for random seed: {config["random_seed"]}\n')
 
     # The following lists consist of datasets for all outputs.
     list_train_X, list_train_Y = [], [] 
@@ -349,6 +351,8 @@ def train_and_eval_multiIndepSVGP_model(
             
             except NotPSDError: 
                 print('Encounting NotPSDError, stop training current indepSVGP!')
+                with open(results_txt, 'a') as file:
+                    file.write(f'{j}th output encounted NotPSDError! \n')
                 break
 
         curr_end_time = time.time()
@@ -356,7 +360,7 @@ def train_and_eval_multiIndepSVGP_model(
         ls_training_time.append(curr_total_training_time)
 
     total_time = np.array(ls_training_time).sum()
-    with open(results_txt, 'w') as file:
+    with open(results_txt, 'a') as file:
         file.write(f'Total time: {total_time}\n')
 
     save_model_and_likelihoods(my_model, f'{results_folder_path}/MultiIGPs_models_and_likelihoods.pth')

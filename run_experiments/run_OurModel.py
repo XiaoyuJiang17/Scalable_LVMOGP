@@ -20,7 +20,7 @@ if __name__ == "__main__":
     root_config = '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/configs/' 
     # NOTE: Specify name here for different experiments: 
     # rnd (fix) + unfix (fix) ; first referring to initialization, second referring to inducing points in input space 
-    curr_config_name = 'spatiotemp/Scale_Matern52_plus_Scale_PeriodicInputsMatern52/lvmogp_catlatent_fix_unfix' 
+    curr_config_name = 'spatiotemp/Periodic_times_Scale_RBF/lvmogp_catlatent_rnd_unfix' 
     curr_config = f'{root_config}/{curr_config_name}.yaml'
     with open(curr_config, 'r') as file: 
         config = yaml.safe_load(file) 
@@ -49,7 +49,7 @@ if __name__ == "__main__":
     ### Model Initialization (before instantiation) ... 
     latent_first_init, latent_second_init = None, None
 
-    gplvm_init = False # use trained gplvm's latents as initialization ...  
+    gplvm_init = True # use trained gplvm's latents as initialization ...  
 
     if config['NNEncoder'] == False:
 

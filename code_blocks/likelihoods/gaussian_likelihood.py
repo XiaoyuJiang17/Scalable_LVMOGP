@@ -37,23 +37,17 @@ class _GaussianLikelihoodBase(Likelihood):
 
     def expected_log_prob(self, target: Tensor, input: MultivariateNormal, *params: Any, **kwargs: Any) -> Tensor:
 
-        way = 'way2'
-
-        if way == 'way1':
-            noise = self._shaped_noise_covar(input.mean.shape, *params, **kwargs).diagonal(dim1=-1, dim2=-2)
-            # Potentially reshape the noise to deal with the multitask case
-            noise = noise.view(*noise.shape[:-1], *input.event_shape)
-            
-            mean, variance = input.mean, input.variance.clamp_min(1e-8)
-            full_variance = variance + noise 
-            # the original implementation is: (# NOTE I find misunderstanding ...(even wrong))
-            # res = ((target - mean).square() + variance) / noise + noise.log() + math.log(2 * math.pi)
-            res = ((target - mean) / full_variance.sqrt()).square() + full_variance.log() + math.log(2 * math.pi)
-            res = res.mul(-0.5)
-
-        elif way == 'way2':
-            # NOTE: This is my newly added implementation. way1 and way2 are tested to have same output (with tolerence for numerical differences)
-            res = self.log_marginal(target, input, *params, **kwargs)
+        noise = self._shaped_noise_covar(input.mean.shape, *params, **kwargs).diagonal(dim1=-1, dim2=-2)
+        # Potentially reshape the noise to deal with the multitask case
+        noise = noise.view(*noise.shape[:-1], *input.event_shape)
+        
+        mean, variance = input.mean, input.variance.clamp_min(1e-8)
+       
+        res = ((target - mean).square() + variance) / noise + noise.log() + math.log(2 * math.pi)
+        # NOTE: following is a log marginal ... 
+        # full_variance = variance + noise 
+        # res = ((target - mean) / full_variance.sqrt()).square() + full_variance.log() + math.log(2 * math.pi)
+        res = res.mul(-0.5)
 
         return res
 

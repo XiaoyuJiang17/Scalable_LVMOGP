@@ -17,7 +17,7 @@ if __name__ == "__main__":
 
     root_config = '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/configs/'
     # NOTE: Specify name here for different experiments:
-    curr_config_name = 'spatiotemp_IGP/Periodic_times_Scale_RBF/IndepSVGP_unfix' # fix refers to fixing inducing points
+    curr_config_name = 'spatiotemp_IGP/Scale_Matern52_plus_Scale_PeriodicInputsMatern52/IndepSVGP_unfix' # fix refers to fixing inducing points
     curr_config = f'{root_config}/{curr_config_name}.yaml'
     with open(curr_config, 'r') as file:
         config = yaml.safe_load(file)
