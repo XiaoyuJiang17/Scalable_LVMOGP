@@ -20,6 +20,7 @@ from linear_operator.operators import (
 from linear_operator.utils.cholesky import psd_safe_cholesky
 from linear_operator import to_dense
 from gpytorch import settings
+import time
 
 class KroneckerVariationalStrategy(Module, ABC):
 
@@ -104,13 +105,28 @@ class KroneckerVariationalStrategy(Module, ABC):
     def kl_divergence(self) -> Tensor:
         r"""
         Compute the KL divergence between the variational inducing distribution :math:`q(\mathbf u)`
-        and the prior inducing distribution :math:`p(\mathbf u)`.
+        and the prior inducing distribution :math:`p(\mathbf u) = N(0,I)`.
+        NOTE: p(\mathbf u) MUST be a standard normal distribution (deisgned for whitening). 
         """
-        # NOTE: due to whitening, prior is N(0,I) not N(0, K_ZZ).
-        with settings.max_preconditioner_size(0):
-            kl_divergence = torch.distributions.kl.kl_divergence(self.variational_distribution, self.prior_distribution)
-        return kl_divergence
+        def kl_divergence_kronecker_wrt_identity(chol_variational_covar_latent: Tensor,
+                                                 chol_variational_covar_input: Tensor,
+                                                 variational_mean: Tensor):
+            """Compute KL between q with Kronecker product covariance and p with 0 mean and Indentity covariance"""
+            M_X, M_H = chol_variational_covar_input.shape[0], chol_variational_covar_latent.shape[0]
+            _variational_mean = variational_mean.reshape(M_H, M_X)
+            log_det_varcov_latent = (torch.prod(torch.diag(chol_variational_covar_latent)) ** 2).log()
+            log_det_varcov_input = (torch.prod(torch.diag(chol_variational_covar_input)) ** 2).log()
+            tr_varcov_latent = torch.sum(chol_variational_covar_latent ** 2)
+            tr_carcov_input = torch.sum(chol_variational_covar_input ** 2)
+            tr_MTM = torch.norm(_variational_mean, p='fro') ** 2 # trace(M^TM) = F_norm(M)^2
+            
+            res = - M_X * log_det_varcov_latent - M_H * log_det_varcov_input + tr_MTM + tr_carcov_input*tr_varcov_latent - M_X*M_H 
+            return res / 2
         
+        return kl_divergence_kronecker_wrt_identity(
+                                    chol_variational_covar_latent=self._variational_distribution.chol_variational_covar_latent,
+                                    chol_variational_covar_input=self._variational_distribution.chol_variational_covar_input,
+                                    variational_mean=self._variational_distribution.variational_mean)
     def forward(
         self,
         latents: Tensor,
@@ -158,7 +174,7 @@ class KroneckerVariationalStrategy(Module, ABC):
 
         L_latent_inv = self._cholesky_factor_latent(induc_latent_covar).solve(torch.eye(induc_latent_covar.size(-1), device=induc_latent_covar.device, dtype=induc_latent_covar.dtype))
         L_input_inv = self._cholesky_factor_input(induc_input_covar).solve(torch.eye(induc_input_covar.size(-1), device=induc_input_covar.device, dtype=induc_input_covar.dtype))
-        L_inv = KroneckerProductLinearOperator(L_latent_inv, L_input_inv).to_dense()
+        L_inv = KroneckerProductLinearOperator(L_latent_inv, L_input_inv)
         
         if L_inv.shape[0] != induc_data_covar.shape[0]:
             print('nasty shape incompatibilies error happens!')
@@ -170,7 +186,7 @@ class KroneckerVariationalStrategy(Module, ABC):
                 pass
             L_latent_inv = self._cholesky_factor_latent(induc_latent_covar).solve(torch.eye(induc_latent_covar.size(-1), device=induc_latent_covar.device, dtype=induc_latent_covar.dtype))
             L_input_inv = self._cholesky_factor_input(induc_input_covar).solve(torch.eye(induc_input_covar.size(-1), device=induc_input_covar.device, dtype=induc_input_covar.dtype))
-            L_inv = KroneckerProductLinearOperator(L_latent_inv, L_input_inv).to_dense()
+            L_inv = KroneckerProductLinearOperator(L_latent_inv, L_input_inv)
 
         interp_term = (L_inv @ induc_data_covar.to(L_inv.dtype))
 

@@ -20,7 +20,7 @@ if __name__ == "__main__":
     root_config = '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/configs/' 
     # NOTE: Specify name here for different experiments: 
     # rnd (fix) + unfix (fix) ; first referring to initialization, second referring to inducing points in input space 
-    curr_config_name = 'spatiotemp/Periodic_times_Scale_RBF/lvmogp_catlatent_rnd_unfix' 
+    curr_config_name = 'spatiotemp/Scale_Matern52_plus_Scale_PeriodicInputsMatern52/lvmogp_catlatent_rnd_unfix' 
     curr_config = f'{root_config}/{curr_config_name}.yaml'
     with open(curr_config, 'r') as file: 
         config = yaml.safe_load(file) 

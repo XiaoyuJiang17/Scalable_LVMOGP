@@ -77,6 +77,8 @@ def train_and_eval_lvmogp_model(
     
     number_all = config['n_outputs'] * config['n_input_train']
     results_txt = f'{results_folder_path}/results.txt'
+    with open(results_txt, 'w') as file:
+        file.write(f'Random seed: {config["random_seed"]}\n')
 
     ''' -------------------------------------- Training --------------------------------------'''
 
@@ -87,7 +89,7 @@ def train_and_eval_lvmogp_model(
         ], lr=config['lr'])
 
     # TODO Try different types of schedulers ... 
-    # scheduler = StepLR(optimizer, step_size=config['step_size'], gamma=config['gamma']) 
+    # scheduler = StepLR(optimizer, step_size=20, gamma=0.95) 
     scheduler = CyclicLR(optimizer, base_lr=config['lr'], max_lr=0.2*config['lr'], step_size_up=config['step_size_up'], mode='triangular', cycle_momentum=False)
     # scheduler = CosineAnnealingLR(optimizer, T_max=20, eta_min=0.2*config['lr'])
 
@@ -152,11 +154,11 @@ def train_and_eval_lvmogp_model(
     end_time = time.time()
     total_training_time = end_time - start_time
 
-    with open(results_txt, 'w') as file:
+    with open(results_txt, 'a') as file:
         file.write(f'Training time: {total_training_time:.2f}\n')
 
     # plot training losses
-    _loss_list = list(np.array(loss_list)[np.array(loss_list) < 3]) # remove too large losses
+    _loss_list = list(np.array(loss_list)[np.array(loss_list) < 1000]) # remove too large losses, i.e. above 3
     plt.plot(_loss_list)
     plt.savefig(f'{results_folder_path}/filtered_training_loss.png')
 
