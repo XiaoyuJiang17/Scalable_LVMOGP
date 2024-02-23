@@ -1,4 +1,5 @@
 import os
+import argparse
 import sys
 sys.path.append('/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/')
 from run_experiments.prepare_dataset import *
@@ -12,11 +13,20 @@ from datetime import datetime
 
 if __name__ == "__main__":
 
+    torch.set_default_dtype(torch.double)
+
+    parser = argparse.ArgumentParser(description='which file to run')
+    parser.add_argument('--config_name', type=str, help='config name')
+    args = parser.parse_args()
     ### Load hyperparameters from .yaml file
 
     root_config = '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/configs/'
     # NOTE: Specify name here for different experiments:
-    curr_config_name = 'spatiotemp_IGP/PeriodicInputsRBFKernel_times_Scale_RBF/IndepSVGP_unfix' # fix refers to fixing inducing points
+
+    ## Examples:
+    # curr_config_name = 'spatiotemp_IGP/PeriodicInputsRBFKernel_times_Scale_RBF/IndepSVGP_unfix' # fix refers to fixing inducing points
+
+    curr_config_name = args.config_name
     curr_config = f'{root_config}/{curr_config_name}.yaml'
     with open(curr_config, 'r') as file:
         config = yaml.safe_load(file)

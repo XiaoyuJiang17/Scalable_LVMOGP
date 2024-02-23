@@ -21,7 +21,11 @@ def prepare_synthetic_regression_data(config):
     '''
 
     data_Y_squeezed = Tensor(pd.read_csv(config['data_Y_squeezed_path']).to_numpy()).reshape(-1)
-    data_inputs = Tensor(pd.read_csv(config['data_inputs_path']).to_numpy()).reshape(-1) 
+    # data_inputs = Tensor(pd.read_csv(config['data_inputs_path']).to_numpy()).reshape(-1) 
+    translate_bias = config['min_input_bound']
+    translate_scale = (config['max_input_bound'] - config['min_input_bound']) / config['n_input']
+    
+    data_inputs =  translate_bias + translate_scale * ( Tensor([i for i in range(config['n_input'])]) )
     assert data_inputs.shape[0] == config['n_input']
     assert data_Y_squeezed.shape[0] == (config['n_input'] * config['n_outputs'])
 

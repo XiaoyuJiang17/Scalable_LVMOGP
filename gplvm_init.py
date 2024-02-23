@@ -82,21 +82,23 @@ def specify_gplvm(config):
 
     gplvm_model = GPLVM(n = config['n_outputs'],
                         data_dim = config['n_input_train'], 
-                        latent_dim = config['latent_dim'], 
+                        latent_dim = config['trainable_latent_dim'], 
                         n_inducing = config['n_inducing_input'])
     return gplvm_model
 
 def train_gplvm(gplvm_model, 
                 gplvm_likelihood,
                 data_Y, 
-                hyper_parameters=None):
+                hyper_parameters=None,
+                ):
     '''
     data_Y: tensor of shape (n, data_dim)
     '''
     print('Start Training GPLVM!')
     if hyper_parameters == None:
+        batch_size = min(100, data_Y.shape[0])
         hyper_parameters = {'training_steps': 5000,
-                            'batch_size': 100,
+                            'batch_size': batch_size,
                             'lr': 0.01}
         
     elbo = VariationalELBO(gplvm_likelihood, gplvm_model, num_data=data_Y.shape[0])

@@ -1,11 +1,11 @@
 # seed
-random_seed: 6
+random_seed: 3
 
 # data
 dataset_type: 'spatio_temporal_data'
-data_Y_tensor: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/climate_data/tensors/temperature.pt'
-data_lat_tensor: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/climate_data/tensors/latitude.pt'
-data_lon_tensor: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/climate_data/tensors/longitude.pt'
+data_Y_tensor: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/climate_data/tensors_1131_outputs/temperature.pt'
+data_lat_tensor: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/climate_data/tensors_1131_outputs/latitude.pt'
+data_lon_tensor: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/climate_data/tensors_1131_outputs/longitude.pt'
 
 # input
 min_input_bound: 0 
@@ -17,10 +17,10 @@ n_input: 363
 n_input_train: 289  # # of train inputs for every output 
 n_input_test: 74   #  # of test inputs for every output 
 input_dim: 1
-latent_dim: 2
-trainable_latent_dim: 2
+latent_dim: 5 # 2
+trainable_latent_dim: 5 # 2
 NNEncoder: False
-# (1) trainable_latent_dim = None: only 1 part, all trainable ; (but initialization need to be re-implement)
+# (1) trainable_latent_dim = None: only 1 part, all trainable ; (but random initialization)
 # (2) trainable_latent_dim = 0: only 1 part, all fixed ; 
 # (3) 0 < trainable_latent_dim < latent_dim: 2 parts ; 
 # (4) trainable_latent_dim = latent_dim: only 1 part, all trainable ; (together with initialization)

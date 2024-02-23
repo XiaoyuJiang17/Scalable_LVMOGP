@@ -106,7 +106,7 @@ class KroneckerVariationalStrategy(Module, ABC):
         r"""
         Compute the KL divergence between the variational inducing distribution :math:`q(\mathbf u)`
         and the prior inducing distribution :math:`p(\mathbf u) = N(0,I)`.
-        NOTE: p(\mathbf u) MUST be a standard normal distribution (deisgned for whitening). 
+        NOTE: p(\mathbf u) MUST be a standard normal distribution (designed for whitening). 
         """
         def kl_divergence_kronecker_wrt_identity(chol_variational_covar_latent: Tensor,
                                                  chol_variational_covar_input: Tensor,
@@ -140,8 +140,8 @@ class KroneckerVariationalStrategy(Module, ABC):
         # Ensure latents, inputs has the same length, i.e. a (latents[i],inputs[i]) pair jointly determines a prediction value / target value.
         assert latents.shape[-2] == inputs.shape[-2]
         mini_batch_size = latents.shape[-2]
-        latents, inputs = latents.to(torch.double), inputs.to(torch.double)
-        inducing_points_latent, inducing_points_input = inducing_points_latent.to(torch.double), inducing_points_input.to(torch.double)
+        latents, inputs = latents, inputs
+        inducing_points_latent, inducing_points_input = inducing_points_latent, inducing_points_input
 
         # NOTE: following two tensors might contains repeting elements!
         full_latent = torch.cat([latents, inducing_points_latent], dim=-2)

@@ -1,11 +1,11 @@
 # seed
-random_seed: 10 
+random_seed: 15 
 
 # data
 dataset_type: 'spatio_temporal_data'
-data_Y_tensor: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/climate_data/tensors/temperature.pt'
-data_lat_tensor: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/climate_data/tensors/latitude.pt'
-data_lon_tensor: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/climate_data/tensors/longitude.pt'
+data_Y_tensor: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/climate_data/tensors_1131_outputs/temperature.pt'
+data_lat_tensor: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/climate_data/tensors_1131_outputs/latitude.pt'
+data_lon_tensor: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/climate_data/tensors_1131_outputs/longitude.pt'
 
 # input
 min_input_bound: 0 

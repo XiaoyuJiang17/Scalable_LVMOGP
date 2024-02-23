@@ -72,8 +72,8 @@ def train_and_eval_lvmogp_model(
         results_folder_path, 
         train_sample_idx_ls, 
         test_sample_idx_ls,
-        means,
-        stds):
+        means=None,
+        stds=None):
     
     number_all = config['n_outputs'] * config['n_input_train']
     results_txt = f'{results_folder_path}/results.txt'
@@ -89,8 +89,14 @@ def train_and_eval_lvmogp_model(
         ], lr=config['lr'])
 
     # TODO Try different types of schedulers ... 
-    # scheduler = StepLR(optimizer, step_size=20, gamma=0.95) 
-    scheduler = CyclicLR(optimizer, base_lr=config['lr'], max_lr=0.2*config['lr'], step_size_up=config['step_size_up'], mode='triangular', cycle_momentum=False)
+    if config['scheduler'] == StepLR:
+        step_size = config['step_size'] if 'step_size' in config else 20
+        gamma = config['gamma'] if 'gamma' in config else 0.95
+        scheduler = StepLR(optimizer, step_size=step_size, gamma=gamma) 
+
+    elif config['scheduler'] == CyclicLR or 'scheduler' not in config: # Default choice
+        step_size_up = config['step_size_up'] if 'step_size_up' in config else 30
+        scheduler = CyclicLR(optimizer, base_lr=config['lr'], max_lr=0.2*config['lr'], step_size_up=step_size_up, mode='triangular', cycle_momentum=False)
     # scheduler = CosineAnnealingLR(optimizer, T_max=20, eta_min=0.2*config['lr'])
 
     loss_list = []
@@ -192,7 +198,9 @@ def train_and_eval_lvmogp_model(
                                                                      data_inputs=data_inputs,
                                                                      config=config,
                                                                      approach=approach,
-                                                                     common_background_information=common_background_information)
+                                                                     common_background_information=common_background_information,
+                                                                     latent_type='NNEncoder' if config['NNEncoder'] else None,
+                                                                     latent_info=latent_info)
 
             # Evaluate on normalized test points
             train_data_predict_ = all_pred_mean_[train_sample_idx_ls]
@@ -209,28 +217,32 @@ def train_and_eval_lvmogp_model(
                 file.write(f'train rmse is {train_rmse_:.4g} \ntest rmse is {test_rmse_:.4g} \ntrain nll is {train_nll_:.4g} \ntest nll is {test_nll_:.4g} \n')
 
             # Evaluate on original test points
-            orig_data_Y_squeezed = (data_Y_squeezed.reshape(config['n_outputs'] , config['n_input']) * stds.unsqueeze(1) + means.unsqueeze(1)).reshape(-1)    
-            orig_all_pred_mean = (all_pred_mean_.reshape(config['n_outputs'] , config['n_input']) * stds.unsqueeze(1) + means.unsqueeze(1)).reshape(-1)
-            orig_all_pred_var = (all_pred_var_.reshape(config['n_outputs'] , config['n_input']) * (stds**2).unsqueeze(1)).reshape(-1)
-            
-            train_data_predict = orig_all_pred_mean[train_sample_idx_ls]
-            train_rmse = (train_data_predict - orig_data_Y_squeezed[train_sample_idx_ls]).square().mean().sqrt()
+            if config['dataset_type'] != 'synthetic_regression':
+                orig_data_Y_squeezed = (data_Y_squeezed.reshape(config['n_outputs'] , config['n_input']) * stds.unsqueeze(1) + means.unsqueeze(1)).reshape(-1)    
+                orig_all_pred_mean = (all_pred_mean_.reshape(config['n_outputs'] , config['n_input']) * stds.unsqueeze(1) + means.unsqueeze(1)).reshape(-1)
+                orig_all_pred_var = (all_pred_var_.reshape(config['n_outputs'] , config['n_input']) * (stds**2).unsqueeze(1)).reshape(-1)
+                
+                train_data_predict = orig_all_pred_mean[train_sample_idx_ls]
+                train_rmse = (train_data_predict - orig_data_Y_squeezed[train_sample_idx_ls]).square().mean().sqrt()
 
-            test_data_predict = orig_all_pred_mean[test_sample_idx_ls]
-            test_rmse = (test_data_predict - orig_data_Y_squeezed[test_sample_idx_ls]).square().mean().sqrt()
+                test_data_predict = orig_all_pred_mean[test_sample_idx_ls]
+                test_rmse = (test_data_predict - orig_data_Y_squeezed[test_sample_idx_ls]).square().mean().sqrt()
 
-            train_nll = neg_log_likelihood(Target=orig_data_Y_squeezed[train_sample_idx_ls], 
-                                            GaussianMean=orig_all_pred_mean[train_sample_idx_ls], 
-                                            GaussianVar=orig_all_pred_var[train_sample_idx_ls])
-            
-            test_nll = neg_log_likelihood(Target=orig_data_Y_squeezed[test_sample_idx_ls], 
-                                           GaussianMean=orig_all_pred_mean[test_sample_idx_ls], 
-                                           GaussianVar=orig_all_pred_var[test_sample_idx_ls])
-            
-            # TODO: avoid following redundant code.
-            with open(results_txt, 'a') as file:
-                file.write(f'Evaluation results for {model_type} model with {approach} approach are: \n')
-                file.write(f'train rmse is {train_rmse:.4g} \ntest rmse is {test_rmse:.4g} \ntrain nll is {train_nll:.4g} \ntest nll is {test_nll:.4g} \n')
+                train_nll = neg_log_likelihood(Target=orig_data_Y_squeezed[train_sample_idx_ls], 
+                                                GaussianMean=orig_all_pred_mean[train_sample_idx_ls], 
+                                                GaussianVar=orig_all_pred_var[train_sample_idx_ls])
+                
+                test_nll = neg_log_likelihood(Target=orig_data_Y_squeezed[test_sample_idx_ls], 
+                                            GaussianMean=orig_all_pred_mean[test_sample_idx_ls], 
+                                            GaussianVar=orig_all_pred_var[test_sample_idx_ls])
+                
+                # TODO: avoid following redundant code.
+                with open(results_txt, 'a') as file:
+                    file.write('On original dataset:\n')
+                    file.write(f'Evaluation results for {model_type} model with {approach} approach are: \n')
+                    file.write(f'train rmse is {train_rmse:.4g} \ntest rmse is {test_rmse:.4g} \ntrain nll is {train_nll:.4g} \ntest nll is {test_nll:.4g} \n')
+            else: 
+                pass
     
 ################################################   Train and Evaluate Multi-IndepSVGP Model  ################################################
 
@@ -476,6 +488,10 @@ def helper_init_model_and_likeli(my_model, config, my_likelihood=None, only_init
         my_model.covar_module_input.kernels[0].lengthscale = config['1stKernel_lengthscale_init']
         my_model.covar_module_input.kernels[1].outputscale = config['2ndKernel_outputscale_init']
         my_model.covar_module_input.kernels[1].base_kernel.lengthscale = config['2ndKernel_lengthscale_init']
+    
+    if config['input_kernel_type'] == 'Scale_RBF':
+        # using default init ... 
+        pass
 
     if not only_init_model:
         # Init inducing points in input space

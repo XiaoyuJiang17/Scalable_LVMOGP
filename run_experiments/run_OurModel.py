@@ -1,4 +1,5 @@
 import os
+import argparse
 import sys
 sys.path.append('/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/')
 from run_experiments.prepare_dataset import *
@@ -15,12 +16,23 @@ from datetime import datetime
 
 if __name__ == "__main__": 
 
+    torch.set_default_dtype(torch.double)
+    
+    parser = argparse.ArgumentParser(description='which file to run')
+    parser.add_argument('--config_name', type=str, help='config name')
+    args = parser.parse_args()
+
     ### Load hyperparameters from .yaml file 
 
-    root_config = '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/configs/' 
+    root_config = '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/configs' 
     # NOTE: Specify name here for different experiments: 
     # rnd (fix) + unfix (fix) ; first referring to initialization, second referring to inducing points in input space 
-    curr_config_name = 'spatiotemp/Scale_Matern52_plus_Scale_PeriodicInputsMatern52/lvmogp_catlatent_rnd_unfix' 
+
+    ## Examples: 
+    # curr_config_name = 'spatiotemp/Periodic_times_Scale_RBF/lvmogp_catlatent_rnd_unfix' 
+    # curr_config_name = 'synthetic/Scale_RBF/lvmogp_unfix'
+
+    curr_config_name = args.config_name
     curr_config = f'{root_config}/{curr_config_name}.yaml'
     with open(curr_config, 'r') as file: 
         config = yaml.safe_load(file) 
@@ -47,14 +59,19 @@ if __name__ == "__main__":
         data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, lon_lat_tensor, train_sample_idx_ls, test_sample_idx_ls, means, stds = prepare_spatio_temp_data(config)
     
     ### Model Initialization (before instantiation) ... 
-    latent_first_init, latent_second_init = None, None
+    latent_first_init, latent_second_init, latent_info = None, None, None
 
-    gplvm_init = True # use trained gplvm's latents as initialization ...  
+    if config['dataset_type'] == 'spatio_temporal_data':
+        # Normally, for spatio-temp data, we use lon_lat tensor as latent information ... 
+        latent_info = lon_lat_tensor
+
+    gplvm_init = config['gplvm_init'] if 'gplvm_init' in config else True  # use trained gplvm's latents as initialization ...  
 
     if config['NNEncoder'] == False:
 
-        if config['trainable_latent_dim'] == 2 and gplvm_init == True:
+        if config['trainable_latent_dim'] > 0 and gplvm_init == True:
             ## Initialization by training GPLVM ... 
+            print('Initialization by training GPLVM ...')
             data_Y = data_Y_squeezed.reshape(config['n_outputs'], config['n_input'])[:, :config['n_input_train']]
             gplvm_model = specify_gplvm(config)
             gplvm_likelihood = GaussianLikelihoodWithMissingObs()
@@ -65,7 +82,7 @@ if __name__ == "__main__":
             latent_first_init = gplvm_model.X.q_mu.detach().data
 
         if config['dataset_type'] == 'spatio_temporal_data' and config['trainable_latent_dim']  == 0:
-            latent_second_init = lon_lat_tensor 
+            latent_second_init = latent_info 
 
     ### Define model and likelihood
     
@@ -86,7 +103,7 @@ if __name__ == "__main__":
         latent_first_init = latent_first_init,                # if None, random initialization
         latent_second_init = latent_second_init,              # if None, random initialization
         NNEncoder = config['NNEncoder'],
-        layers = None
+        layers = None                                         # if none, adopt default value [4, 8, 4]
     )
 
     my_likelihood = GaussianLikelihood()
@@ -113,7 +130,7 @@ if __name__ == "__main__":
         my_model = my_model,
         my_likelihood = my_likelihood,
         config = config,
-        latent_info = lon_lat_tensor,
+        latent_info = latent_info,
         results_folder_path = results_folder_path,
         train_sample_idx_ls = train_sample_idx_ls, 
         test_sample_idx_ls = test_sample_idx_ls,
