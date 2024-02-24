@@ -89,14 +89,15 @@ def train_and_eval_lvmogp_model(
         ], lr=config['lr'])
 
     # TODO Try different types of schedulers ... 
-    if config['scheduler'] == StepLR:
+    if 'scheduler' not in config or config['scheduler'] == CyclicLR: # Default choice
+        step_size_up = config['step_size_up'] if 'step_size_up' in config else 30
+        scheduler = CyclicLR(optimizer, base_lr=config['lr'], max_lr=0.2*config['lr'], step_size_up=step_size_up, mode='triangular', cycle_momentum=False)
+
+    elif config['scheduler'] == StepLR:
         step_size = config['step_size'] if 'step_size' in config else 20
         gamma = config['gamma'] if 'gamma' in config else 0.95
         scheduler = StepLR(optimizer, step_size=step_size, gamma=gamma) 
-
-    elif config['scheduler'] == CyclicLR or 'scheduler' not in config: # Default choice
-        step_size_up = config['step_size_up'] if 'step_size_up' in config else 30
-        scheduler = CyclicLR(optimizer, base_lr=config['lr'], max_lr=0.2*config['lr'], step_size_up=step_size_up, mode='triangular', cycle_momentum=False)
+        
     # scheduler = CosineAnnealingLR(optimizer, T_max=20, eta_min=0.2*config['lr'])
 
     loss_list = []
@@ -335,7 +336,15 @@ def train_and_eval_multiIndepSVGP_model(
             {'params': curr_likelihood.parameters()},
         ], lr=config['lr'])
 
-        curr_scheduler = StepLR(curr_optimizer, step_size=config['step_size'], gamma=config['gamma'])
+        # TODO Try different types of schedulers ... 
+        if 'scheduler' not in config or config['scheduler'] == CyclicLR: # Default choice
+            step_size_up = config['step_size_up'] if 'step_size_up' in config else 30
+            curr_scheduler = CyclicLR(curr_optimizer, base_lr=config['lr'], max_lr=0.2*config['lr'], step_size_up=step_size_up, mode='triangular', cycle_momentum=False)
+
+        elif config['scheduler'] == StepLR:
+            step_size = config['step_size'] if 'step_size' in config else 20
+            gamma = config['gamma'] if 'gamma' in config else 0.95
+            curr_scheduler = StepLR(curr_optimizer, step_size=step_size, gamma=gamma) 
         # curr_scheduler = CyclicLR(curr_optimizer, base_lr=config['lr'], max_lr=0.2*config['lr'], step_size_up=config['step_size_up'], mode='triangular', cycle_momentum=False)
 
         mll = VariationalELBO(curr_likelihood, curr_model, num_data=train_Y.size(0))
@@ -412,49 +421,51 @@ def train_and_eval_multiIndepSVGP_model(
         test_nll_sum  += test_nll_ *  len(list_test_Y[j])
 
         ''' ------------ ------------ ------------ ------------ ------------ ------------ ------------'''
+        if means != None:
+            original_train_Y_j = (list_train_Y[j] * stds[j].item() )+ means[j].item()
+            original_test_Y_j = (list_test_Y[j] * stds[j].item() )+ means[j].item()
 
-        original_train_Y_j = (list_train_Y[j] * stds[j].item() )+ means[j].item()
-        original_test_Y_j = (list_test_Y[j] * stds[j].item() )+ means[j].item()
+            original_curr_train_pred_loc = curr_train_output_dist.loc.detach() * stds[j].item() + means[j].item()
+            original_curr_test_pred_loc = curr_test_output_dist.loc.detach() * stds[j].item() + means[j].item()
+            original_curr_train_pred_var = curr_train_output_dist.variance.detach() * (stds[j].item()**2)
+            original_curr_test_pred_var = curr_test_output_dist.variance.detach() * (stds[j].item()**2)
 
-        original_curr_train_pred_loc = curr_train_output_dist.loc.detach() * stds[j].item() + means[j].item()
-        original_curr_test_pred_loc = curr_test_output_dist.loc.detach() * stds[j].item() + means[j].item()
-        original_curr_train_pred_var = curr_train_output_dist.variance.detach() * (stds[j].item()**2)
-        original_curr_test_pred_var = curr_test_output_dist.variance.detach() * (stds[j].item()**2)
+            # RMSE on original data
 
-        # RMSE on original data
+            original_curr_train_suqare_errors = (original_curr_train_pred_loc - original_train_Y_j).square()
+            original_curr_test_square_errors = (original_curr_test_pred_loc - original_test_Y_j).square()
+            original_train_error_square_sum += original_curr_train_suqare_errors.sum()
+            original_test_error_square_sum  += original_curr_test_square_errors.sum()
 
-        original_curr_train_suqare_errors = (original_curr_train_pred_loc - original_train_Y_j).square()
-        original_curr_test_square_errors = (original_curr_test_pred_loc - original_test_Y_j).square()
-        original_train_error_square_sum += original_curr_train_suqare_errors.sum()
-        original_test_error_square_sum  += original_curr_test_square_errors.sum()
+            # NLL on original data
+            original_train_nll_ = neg_log_likelihood(original_train_Y_j, 
+                                            original_curr_train_pred_loc, 
+                                            original_curr_train_pred_var)
+            
+            original_test_nll_ = neg_log_likelihood(original_test_Y_j, 
+                                        original_curr_test_pred_loc, 
+                                        original_curr_test_pred_var)
+            
+            original_train_nll_sum += original_train_nll_ * len(list_train_Y[j])
+            original_test_nll_sum  += original_test_nll_ *  len(list_test_Y[j])
 
-        # NLL on original data
-        original_train_nll_ = neg_log_likelihood(original_train_Y_j, 
-                                        original_curr_train_pred_loc, 
-                                        original_curr_train_pred_var)
-        
-        original_test_nll_ = neg_log_likelihood(original_test_Y_j, 
-                                       original_curr_test_pred_loc, 
-                                       original_curr_test_pred_var)
-        
-        original_train_nll_sum += original_train_nll_ * len(list_train_Y[j])
-        original_test_nll_sum  += original_test_nll_ *  len(list_test_Y[j])
-
-
+        ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 
         train_error_length += len(list_train_Y[j])
         test_error_length += len(list_test_Y[j])
 
+    # ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- -----
     with open(results_txt, 'a') as file:
         file.write('Evaluation on normalized data:\n')
         file.write(f'global train rmse is {((train_error_square_sum / train_error_length).sqrt()):.4g}\n')
         file.write(f'global test rmse is {((test_error_square_sum / test_error_length).sqrt()):.4g}\n')
         file.write(f'global train nll is {(train_nll_sum / train_error_length):.4g}\n')
         file.write(f'global test nll is {(test_nll_sum / test_error_length):.4g}\n')
-        file.write('Evaluation on original data:\n')
-        file.write(f'global train rmse is {((original_train_error_square_sum / train_error_length).sqrt()):.4g}\n')
-        file.write(f'global test rmse is {((original_test_error_square_sum / test_error_length).sqrt()):.4g}\n')
-        file.write(f'global train nll is {(original_train_nll_sum / train_error_length):.4g}\n')
-        file.write(f'global test nll is {(original_test_nll_sum / test_error_length):.4g}\n')
+        if means != None:
+            file.write('Evaluation on original data:\n')
+            file.write(f'global train rmse is {((original_train_error_square_sum / train_error_length).sqrt()):.4g}\n')
+            file.write(f'global test rmse is {((original_test_error_square_sum / test_error_length).sqrt()):.4g}\n')
+            file.write(f'global train nll is {(original_train_nll_sum / train_error_length):.4g}\n')
+            file.write(f'global test nll is {(original_test_nll_sum / test_error_length):.4g}\n')
 
 ################################################   Init Model and Likelihood : Helper Function  ################################################
 def helper_init_latent_kernel(my_model, gplvm_model):

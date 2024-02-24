@@ -3,37 +3,26 @@ random_seed: 2
 
 # data
 dataset_type: synthetic_regression
-data_Y_squeezed_path: /Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/synth_regression/smartly_generated/ninputs_50_nlatents_5000/target_data.csv
+data_Y_squeezed_path: /Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/synth_regression/smartly_generated/ninputs_50_nlatents_50/target_data.csv
 
 # input
 min_input_bound: 0 
 max_input_bound: 20 
 
 # model
-gplvm_init: True
-n_outputs: 5000 
+n_outputs: 50 
 n_input: 50
 n_input_train: 25  # # of train inputs for every output 
 n_input_test: 25   #  # of test inputs for every output 
 input_dim: 1
 latent_dim: 2
 trainable_latent_dim: 2
-NNEncoder: False
-# (1) trainable_latent_dim = None: only 1 part, all trainable ; (but initialization need to be re-implement)
-# (2) trainable_latent_dim = 0: only 1 part, all fixed ;  
-# (3) 0 < trainable_latent_dim < latent_dim: 2 parts ; 
-# (4) trainable_latent_dim = latent_dim: only 1 part, all trainable ; (together with random initialization)
 n_inducing_input: 20
 n_inducing_latent: 50
 batch_size_latent: 50
 batch_size_input:  20
-pca: False
-learn_inducing_locations_latent: True
 learn_inducing_locations_input: True
-latent_kernel_type: 'Scale_RBF'
 input_kernel_type: Scale_RBF 
-beta: 1
-alpha: 1
 
 # model initialization
 # kernels using default initialization ... 
@@ -42,7 +31,7 @@ init_inducing_input_UB: 20
 init_likelihood_noise: 0.05
 
 # optimizer
-lr: 0.1
+lr: 0.01 # 0.01
 step_size_up: 30
 
 # training

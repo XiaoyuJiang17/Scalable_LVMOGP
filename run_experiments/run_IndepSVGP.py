@@ -20,7 +20,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     ### Load hyperparameters from .yaml file
 
-    root_config = '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/configs/'
+    root_config = '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/configs'
     # NOTE: Specify name here for different experiments:
 
     ## Examples:

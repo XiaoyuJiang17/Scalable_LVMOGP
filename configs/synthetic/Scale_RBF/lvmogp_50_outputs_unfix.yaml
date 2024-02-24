@@ -42,7 +42,7 @@ init_inducing_input_UB: 20
 init_likelihood_noise: 0.05
 
 # optimizer
-lr: 0.01
+lr: 0.1 # 0.01
 step_size_up: 30
 
 # training

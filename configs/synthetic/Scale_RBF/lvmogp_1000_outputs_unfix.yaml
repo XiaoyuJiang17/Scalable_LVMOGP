@@ -1,9 +1,9 @@
 # seed
-random_seed: 2
+random_seed: 1
 
 # data
 dataset_type: synthetic_regression
-data_Y_squeezed_path: /Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/synth_regression/smartly_generated/ninputs_50_nlatents_5000/target_data.csv
+data_Y_squeezed_path: /Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/synth_regression/smartly_generated/ninputs_50_nlatents_1000/target_data.csv
 
 # input
 min_input_bound: 0 
@@ -11,7 +11,7 @@ max_input_bound: 20
 
 # model
 gplvm_init: True
-n_outputs: 5000 
+n_outputs: 1000 
 n_input: 50
 n_input_train: 25  # # of train inputs for every output 
 n_input_test: 25   #  # of test inputs for every output 
@@ -42,7 +42,7 @@ init_inducing_input_UB: 20
 init_likelihood_noise: 0.05
 
 # optimizer
-lr: 0.1
+lr: 0.1 # 0.01
 step_size_up: 30
 
 # training

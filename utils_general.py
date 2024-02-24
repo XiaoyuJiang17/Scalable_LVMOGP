@@ -11,6 +11,7 @@ import numpy as np
 from tqdm import trange
 from linear_operator import to_dense
 from gpytorch.settings import _linalg_dtype_cholesky
+import matplotlib.pyplot as plt
 
 ################################################   Specify Kernels : Helper Function  ################################################
 
@@ -290,6 +291,55 @@ def pred4all_outputs_inputs(my_model,
             
     return all_pred_mean, all_pred_var
 
+def evaluate_on_single_output(
+        function_index,
+        data_inputs,
+        data_Y_squeezed,
+        ls_of_ls_train_input,
+        ls_of_ls_test_input,
+        train_sample_idx_ls,
+        test_sample_idx_ls,
+        all_pred_mean,
+        all_pred_var,
+        n_data4visual,
+        all_pred_mean4visual,
+        all_pred_var4visual
+    ):
+    # Pick the index of the funtion to show
+    # function_index = 982
+
+    performance_dirct = {}
+    train_input = data_inputs[ls_of_ls_train_input[function_index]]
+    train_start = 0
+    for i in range(function_index):
+        train_start += len(ls_of_ls_train_input[i]) # don't assume every output has the same length of inputs
+    train_end = train_start + len(ls_of_ls_train_input[function_index])
+    train_target = data_Y_squeezed[train_sample_idx_ls][train_start:train_end]
+    train_predict = all_pred_mean[train_sample_idx_ls][train_start:train_end]
+    train_rmse_ = (train_target - train_predict).square().mean().sqrt()
+    train_nll_ = neg_log_likelihood(train_target, all_pred_mean[train_sample_idx_ls][train_start:train_end], all_pred_var[train_sample_idx_ls][train_start:train_end])
+    performance_dirct['train_rmse'] = train_rmse_
+    performance_dirct['train_nll'] = train_nll_
+
+    test_input = data_inputs[ls_of_ls_test_input[function_index]]
+    test_start = 0
+    for j in range(function_index):
+        test_start += len(ls_of_ls_test_input[i])
+    test_end = test_start + len(ls_of_ls_test_input[function_index])
+    test_target = data_Y_squeezed[test_sample_idx_ls][test_start:test_end]
+    test_predict = all_pred_mean[test_sample_idx_ls][test_start:test_end]
+    test_rmse_ = (test_predict - test_target).square().mean().sqrt()
+    test_nll_ = neg_log_likelihood(test_target, all_pred_mean[test_sample_idx_ls][test_start:test_end], all_pred_var[test_sample_idx_ls][test_start:test_end])
+    performance_dirct['test_rmse'] = test_rmse_
+    performance_dirct['test_nll'] = test_nll_
+
+    gp4visual_start = n_data4visual * function_index
+    gp4visual_end = n_data4visual * (function_index + 1)
+    gp_pred_mean = all_pred_mean4visual[gp4visual_start:gp4visual_end]
+    gp_pred_std = all_pred_var4visual.sqrt()[gp4visual_start:gp4visual_end]
+
+    return train_input, train_target, test_input, test_target, gp_pred_mean, gp_pred_std, performance_dirct
+
 ################################################   Metrices  ################################################
 
 def neg_log_likelihood(Target:Tensor, GaussianMean:Tensor, GaussianVar:Tensor):
@@ -316,3 +366,52 @@ def pca_reduction(originalTensor, n_components=2):
     # reducedTensor of shape (# data, n_components)
     return Tensor(reducedTensor)
 
+################################################   Helper function:  plot ################################################
+
+def  plot_traindata_testdata_fittedgp(train_X: Tensor, train_Y: Tensor, test_X: Tensor, test_Y: Tensor, gp_X: Tensor, gp_pred_mean: Tensor, gp_pred_std: Tensor, inducing_points_X: Tensor, n_inducing_C:int=15, picture_save_path:str=''):
+    '''
+    This is a 1 dim plot: train (corss) and test (dot) data, fitted gp all in the same figure.
+    The shadowed area is mean +/- 1.96 gp_pred_std.
+    Args:
+        train_X: training input locations.
+        train_Y: target values for corresponding train_X.
+        test_X: testing input locations.
+        test_Y: target values for corresponding test_X.
+        gp_pred_mean: mean of predictive funtion.
+        gp_pred_std: std of predictive function. 
+
+    Return:    
+    NOTE: gp_pred_std**2 is formed by two parts, variance from q(f_test) and likelihood variance.
+    '''
+    # Get numpy 
+    train_X_np = train_X.numpy().squeeze()
+    train_Y_np = train_Y.numpy().squeeze()
+    test_X_np = test_X.numpy().squeeze()
+    test_Y_np = test_Y.numpy().squeeze()
+    gp_pred_mean_np = gp_pred_mean.numpy().squeeze()
+    gp_pred_std_np = gp_pred_std.numpy().squeeze()
+    gp_X = gp_X.numpy().squeeze()
+    inducing_points_X = inducing_points_X.numpy().squeeze()
+
+    plt.figure(figsize=(12, 8))
+    # Plot training data as crosses
+    plt.scatter(train_X_np, train_Y_np, c='r', marker='x', label='Training Data')
+
+    # Plot test data as dots
+    plt.scatter(test_X_np, test_Y_np, c='b', marker='o', label='Test Data', alpha=0.2)
+
+    # Plot inducing points on x axis
+    plt.scatter(inducing_points_X, [plt.gca().get_ylim()[0] - 1] * n_inducing_C, color='black', marker='^', label='Inducing Locations')
+
+
+    # Plot GP predictions as a line
+    plt.plot(gp_X, gp_pred_mean_np, 'k', lw=1, zorder=9)
+    plt.fill_between(gp_X, gp_pred_mean_np - 1.96 * gp_pred_std_np, gp_pred_mean_np + 1.96 * gp_pred_std_np, alpha=0.2, color='k')
+
+    plt.legend()
+    plt.title("Train/Test Data and Fitted GP")
+    plt.tight_layout()
+    # plt.savefig(picture_save_path)
+    plt.show()
+
+    return None
