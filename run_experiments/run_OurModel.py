@@ -20,6 +20,7 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description='which file to run')
     parser.add_argument('--config_name', type=str, help='config name')
+    parser.add_argument('--random_seed', type=int, help='random seed')
     args = parser.parse_args()
 
     ### Load hyperparameters from .yaml file 
@@ -45,9 +46,9 @@ if __name__ == "__main__":
 
     ### specify random seed
     
-    random.seed(config['random_seed'])
-    np.random.seed(config['random_seed'])
-    torch.manual_seed(config['random_seed'])
+    random.seed(args.random_seed)
+    np.random.seed(args.random_seed)
+    torch.manual_seed(args.random_seed)
 
     ### Specify the dataset
 
@@ -135,7 +136,8 @@ if __name__ == "__main__":
         train_sample_idx_ls = train_sample_idx_ls, 
         test_sample_idx_ls = test_sample_idx_ls,
         means = means,
-        stds = stds
+        stds = stds,
+        args = args
     )
         
     

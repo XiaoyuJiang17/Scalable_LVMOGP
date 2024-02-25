@@ -73,12 +73,13 @@ def train_and_eval_lvmogp_model(
         train_sample_idx_ls, 
         test_sample_idx_ls,
         means=None,
-        stds=None):
+        stds=None,
+        args=None):
     
     number_all = config['n_outputs'] * config['n_input_train']
     results_txt = f'{results_folder_path}/results.txt'
     with open(results_txt, 'w') as file:
-        file.write(f'Random seed: {config["random_seed"]}\n')
+        file.write(f'Random seed: {args.random_seed}\n')
 
     ''' -------------------------------------- Training --------------------------------------'''
 
@@ -270,7 +271,8 @@ def train_and_eval_multiIndepSVGP_model(
         config,
         results_folder_path,
         means,
-        stds):
+        stds,
+        args):
     
     '''
     First 6 arguments are returned from functions in prepare_data.py, these data are naturally designed for MOGP.
@@ -278,7 +280,7 @@ def train_and_eval_multiIndepSVGP_model(
     '''
     results_txt = f'{results_folder_path}/results.txt'
     with open(results_txt, 'w') as file:
-        file.write(f'Results for random seed: {config["random_seed"]}\n')
+        file.write(f'Results for random seed: {args.random_seed}\n')
 
     # The following lists consist of datasets for all outputs.
     list_train_X, list_train_Y = [], [] 

@@ -1,13 +1,13 @@
 # data
 dataset_type: synthetic_regression
-data_Y_squeezed_path: /Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/synth_regression/smartly_generated/ninputs_50_nlatents_50/target_data.csv
+data_Y_squeezed_path: /Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/synth_regression/smartly_generated/ninputs_50_nlatents_1000/target_data.csv
 
 # input
 min_input_bound: 0 
 max_input_bound: 20 
 
 # model
-n_outputs: 50 
+n_outputs: 1000 
 n_input: 50
 n_input_train: 25  # # of train inputs for every output 
 n_input_test: 25   #  # of test inputs for every output 

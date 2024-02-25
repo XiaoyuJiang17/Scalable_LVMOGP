@@ -46,34 +46,34 @@ def prepare_common_background_info(my_model, config):
         L = psd_safe_cholesky(to_dense(induc_induc_covar).type(_linalg_dtype_cholesky.value()), max_tries=4)
         return TriangularLinearOperator(L)
     
-    K_uu_latent = my_model.covar_module_latent(my_model.variational_strategy.inducing_points_latent.data).to_dense().data.to(torch.float64)
-    # K_uu_latent_inv = torch.linalg.solve(K_uu_latent, torch.eye(K_uu_latent.size(-1)).to(torch.float64))
-    K_uu_input = my_model.covar_module_input(my_model.variational_strategy.inducing_points_input.data).to_dense().data.to(torch.float64)
-    # K_uu_input_inv = torch.linalg.solve(K_uu_input, torch.eye(K_uu_input.size(-1)).to(torch.float64))
+    K_uu_latent = my_model.covar_module_latent(my_model.variational_strategy.inducing_points_latent.data).to_dense().data
+    # K_uu_latent_inv = torch.linalg.solve(K_uu_latent, torch.eye(K_uu_latent.size(-1))
+    K_uu_input = my_model.covar_module_input(my_model.variational_strategy.inducing_points_input.data).to_dense().data
+    # K_uu_input_inv = torch.linalg.solve(K_uu_input, torch.eye(K_uu_input.size(-1))
 
-    K_uu = KroneckerProductLinearOperator(K_uu_latent, K_uu_input).to_dense().data
+    K_uu = KroneckerProductLinearOperator(K_uu_latent, K_uu_input) #.to_dense().data
     # chol_K_uu_inv_t = _cholesky_factor_latent(KroneckerProductLinearOperator(K_uu_latent_inv, K_uu_input_inv)).to_dense().data.t()
     chol_K_uu_inv_t = KroneckerProductLinearOperator(
-            torch.linalg.solve( _cholesky_factor(K_uu_latent).to_dense().data, torch.eye(K_uu_latent.size(-1)).to(torch.float64)),
-            torch.linalg.solve( _cholesky_factor(K_uu_input).to_dense().data, torch.eye(K_uu_input.size(-1)).to(torch.float64)),
-        ).to_dense().data.t()
+            torch.linalg.solve( _cholesky_factor(K_uu_latent).to_dense().data, torch.eye(K_uu_latent.size(-1))),
+            torch.linalg.solve( _cholesky_factor(K_uu_input).to_dense().data, torch.eye(K_uu_input.size(-1))),
+        )._transpose_nonbatch() # .to_dense().data.t()
     # ------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-    chol_covar_latent_u = my_model.variational_strategy._variational_distribution.chol_variational_covar_latent.data.to(torch.float64)
-    covar_latent_u = CholLinearOperator(chol_covar_latent_u).to_dense()
-    chol_covar_input_u = my_model.variational_strategy._variational_distribution.chol_variational_covar_input.data.to(torch.float64)
-    covar_input_u = CholLinearOperator(chol_covar_input_u).to_dense()
+    chol_covar_latent_u = my_model.variational_strategy._variational_distribution.chol_variational_covar_latent.data
+    covar_latent_u = CholLinearOperator(chol_covar_latent_u)
+    chol_covar_input_u = my_model.variational_strategy._variational_distribution.chol_variational_covar_input.data
+    covar_input_u = CholLinearOperator(chol_covar_input_u)
 
-    covar_u = KroneckerProductLinearOperator(covar_latent_u, covar_input_u).to_dense().data
+    covar_u = KroneckerProductLinearOperator(covar_latent_u, covar_input_u) # .to_dense().data
 
     # ------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
     common_background_information = {
-                        'K_uu': K_uu.data,
-                        'chol_K_uu_inv_t': chol_K_uu_inv_t.data, 
+                        'K_uu': K_uu,
+                        'chol_K_uu_inv_t': chol_K_uu_inv_t, 
                         'm_u': my_model.variational_strategy._variational_distribution.variational_mean.data,
-                        'Sigma_u': covar_u.data,
-                        'A': chol_K_uu_inv_t @ (covar_u - torch.eye(covar_u.shape[0])) @ chol_K_uu_inv_t.t(),
+                        'Sigma_u': covar_u,
+                        'A': chol_K_uu_inv_t @ (covar_u - torch.eye(covar_u.shape[0])) @ chol_K_uu_inv_t._transpose_nonbatch(),
                         'var_H': my_model.covar_module_latent.outputscale.data, # based on the use of RBF kernel
                         'var_X': my_model.covar_module_input(Tensor([0.])).to_dense().item(), # This implementation works for any kind of kernel.
                         #'var_X': my_model.covar_module_input.outputscale.data,  # 
@@ -83,7 +83,7 @@ def prepare_common_background_info(my_model, config):
     chol_K_uu_inv_t: inverse of K_uu matrix, of shape (M_H * M_X, M_H * M_X)
     m_u: mean of the variational distribution
     Sigma_u: covariance matrix of the variational distribution
-    A: chol_K_uu_inv_t (Sigma_u - K_uu) chol_K_uu_inv_t.T
+    A: chol_K_uu_inv_t (Sigma_u - K_uu) chol_K_uu_inv_t.T NOTE: whitening ... 
     var_H: 
     var_X: 
     W: vector; containing all lengthscales in the RAD kernel
@@ -95,16 +95,18 @@ def prepare_common_background_info(my_model, config):
 
     return common_background_information
    
-def integration_prediction_func(test_input, 
+def integration_prediction_func(test_input,     # tensor
                                 output_index, 
                                 my_model, 
                                 common_background_information, 
                                 config, 
                                 latent_type=None,
                                 latent_info=None):
-
-    input_K_f_u = my_model.covar_module_input(test_input, my_model.variational_strategy.inducing_points_input.data.to(test_input.dtype)).to_dense().data
-    input_K_u_f_K_f_u = input_K_f_u.t() @ input_K_f_u
+    '''
+    Current implementation support doing inference for multiple inputs of same output (latent) simutanously ... 
+    '''
+    input_K_f_u = my_model.covar_module_input(test_input, my_model.variational_strategy.inducing_points_input.data).to_dense().data
+    input_K_u_fi_K_fi_u_list = [torch.outer(input_K_f_u[i, :], input_K_f_u[i, :]) for i in range(input_K_f_u.shape[0])]
 
     if latent_type == None:
         # Mean and covariance of latent distribution.
@@ -121,8 +123,8 @@ def integration_prediction_func(test_input,
         'm_plus': m_plus_,
         'Sigma_plus': Sigma_plus_,
         'input_K_f_u': input_K_f_u, 
-        'input_K_u_f_K_f_u': input_K_u_f_K_f_u,
-        'expectation_K_uu': None
+        'input_K_u_fi_K_fi_u_list': input_K_u_fi_K_fi_u_list,
+        'expectation_K_uu_dict': {}
     }
     
     # helper functions -----------------------------------------------------------------------------------------------------------------------
@@ -154,38 +156,53 @@ def integration_prediction_func(test_input,
         return (common_background_information['constant_c'] ** 2 ) * result1 * result2
     
     def expectation_lambda(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information):
-        result_ = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_f_u'].reshape(1, -1), data_specific_background_information['input_K_f_u']).to_dense().data 
-        result_ = result_ @ common_background_information['chol_K_uu_inv_t'].to(result_.dtype) @ common_background_information['m_u'].to(result_.dtype)
+        result_ = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_f_u'].reshape(1, -1), data_specific_background_information['input_K_f_u'])
+        result_ = result_ @ common_background_information['chol_K_uu_inv_t'] @ common_background_information['m_u']
         return result_
         
     def expectation_lambda_square(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information):
         result_ = common_background_information['m_u']
-        _result = result_ @ common_background_information['chol_K_uu_inv_t'].t().to(result_.dtype)
-        interm_term = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_u_f_K_f_u'], data_specific_background_information['input_K_u_f_K_f_u']).to_dense().data
-        result_ = _result @ interm_term.to(result_.dtype) @ _result.t()
-        # result_ = result_ @ common_background_information['chol_K_uu_inv_t'].to(result_.dtype) @ common_background_information['m_u']
+        _result = result_ @ common_background_information['chol_K_uu_inv_t']._transpose_nonbatch()
 
-        if data_specific_background_information['expectation_K_uu'] == None:
-            data_specific_background_information['expectation_K_uu'] = interm_term
-        return result_
+        final_result = torch.zeros(len(input_K_u_fi_K_fi_u_list))
+
+        for i in range(len(input_K_u_fi_K_fi_u_list)):
+            interm_term = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_u_f_K_f_u'], data_specific_background_information['input_K_u_fi_K_fi_u_list'][i])
+            result_ = _result @ interm_term @ _result.t()
+            final_result[i] = result_.item()
+            # Store these result for next time use ... 
+            if i not in data_specific_background_information['expectation_K_uu_dict']:
+                data_specific_background_information['expectation_K_uu_dict'][i] = interm_term
+
+        return final_result
         
     def expectation_gamma(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information):
+
         result_ = common_background_information['var_H'] * common_background_information['var_X']
 
-        if data_specific_background_information['expectation_K_uu'] == None:
-            data_specific_background_information['expectation_K_uu'] = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_u_f_K_f_u'], \
-                                                                                                    data_specific_background_information['input_K_u_f_K_f_u']).to_dense().data
+        final_result = torch.zeros(len(input_K_u_fi_K_fi_u_list))
 
-        return result_ + (common_background_information['A'] * data_specific_background_information['expectation_K_uu']).sum()
+        for i in range(len(input_K_u_fi_K_fi_u_list)):
+            if i not in data_specific_background_information['expectation_K_uu_dict']:
+                data_specific_background_information['expectation_K_uu_dict'] = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_u_f_K_f_u'], \
+                                                                                                        data_specific_background_information['input_K_u_fi_K_fi_u_list'][i])
+            final_result[i] = (result_ + (common_background_information['A'] * data_specific_background_information['expectation_K_uu_dict'][i]).sum()).item()
+
+        return final_result
     
     def integration_predictive_mean(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information):
         return expectation_lambda(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information)
 
 
     def integration_predictive_var(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information):
-        return expectation_lambda_square(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information) \
-            + expectation_gamma(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information) \
-            - expectation_lambda(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information)**2
+
+        term1 = expectation_lambda_square(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information)
+        term2 = expectation_gamma(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information)
+        term3 = expectation_lambda(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information).pow(2)
+        # TODO: something goes wrong from scalar prediction to vector prediction ... 
+        result = ( term1 + term2 - term3 )
+        assert torch.all(result > 0.)
+        return result
     
     # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -347,10 +364,21 @@ def neg_log_likelihood(Target:Tensor, GaussianMean:Tensor, GaussianVar:Tensor):
     Evaluate negative log likelihood on given i.i.d. targets, where likelihood function is 
     gaussian with mean GaussianMean variance GaussianVar.
 
+    Args:
+        Target (torch.Tensor): The target values.
+        GaussianMean (torch.Tensor): The mean values of the Gaussian distribution.
+        GaussianVar (torch.Tensor): The variance values of the Gaussian distribution.
+
+        
     Return:
-        nll: scalar
+        nll: (torch.Tensor): The scalar value of the negative log likelihood
     '''
     assert Target.shape == GaussianMean.shape == GaussianVar.shape
+
+    # numerical stability 
+    epsilon = 1e-8
+    GaussianVar += epsilon
+    
     nll = 0.5 * torch.mean(torch.log(2 * torch.pi * GaussianVar) + (Target - GaussianMean)**2 / GaussianVar)
     return nll
 

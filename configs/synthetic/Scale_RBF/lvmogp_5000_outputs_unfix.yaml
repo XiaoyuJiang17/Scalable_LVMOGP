@@ -1,6 +1,3 @@
-# seed
-random_seed: 2
-
 # data
 dataset_type: synthetic_regression
 data_Y_squeezed_path: /Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/synth_regression/smartly_generated/ninputs_50_nlatents_5000/target_data.csv
