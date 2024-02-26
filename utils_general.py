@@ -94,19 +94,31 @@ def prepare_common_background_info(my_model, config):
     common_background_information['constant_c'] = c
 
     return common_background_information
-   
+
+def prepare_pre_computation(my_model,
+                            test_input):
+    '''note for each input x*, we compute a corresponding K_u_f_K_f_u, use this function only once to save computation'''
+    input_K_f_u = my_model.covar_module_input(test_input, my_model.variational_strategy.inducing_points_input.data).to_dense().data
+    input_K_u_fi_K_fi_u_list = [torch.outer(input_K_f_u[i, :], input_K_f_u[i, :]) for i in range(test_input.shape[0])]
+    
+    pre_compute_dict = {}
+    pre_compute_dict['input_K_f_u'] = input_K_f_u
+    pre_compute_dict['input_K_u_fi_K_fi_u_list'] = input_K_u_fi_K_fi_u_list
+
+    return pre_compute_dict
+
 def integration_prediction_func(test_input,     # tensor
                                 output_index, 
                                 my_model, 
                                 common_background_information, 
+                                pre_compute_dict,
                                 config, 
                                 latent_type=None,
                                 latent_info=None):
     '''
     Current implementation support doing inference for multiple inputs of same output (latent) simutanously ... 
+    NOTE pre_compute_list contains some variables which are pre computed (only once, outside this func) for efficiency ... 
     '''
-    input_K_f_u = my_model.covar_module_input(test_input, my_model.variational_strategy.inducing_points_input.data).to_dense().data
-    input_K_u_fi_K_fi_u_list = [torch.outer(input_K_f_u[i, :], input_K_f_u[i, :]) for i in range(test_input.shape[0])]
 
     if latent_type == None:
         # Mean and covariance of latent distribution.
@@ -122,8 +134,6 @@ def integration_prediction_func(test_input,     # tensor
     data_specific_background_information = {
         'm_plus': m_plus_,
         'Sigma_plus': Sigma_plus_,
-        'input_K_f_u': input_K_f_u, 
-        'input_K_u_fi_K_fi_u_list': input_K_u_fi_K_fi_u_list,
         'expectation_K_uu_dict': {}
     }
     
@@ -156,7 +166,7 @@ def integration_prediction_func(test_input,     # tensor
         return (common_background_information['constant_c'] ** 2 ) * result1 * result2
     
     def expectation_lambda(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information):
-        result_ = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_f_u'].reshape(1, -1), data_specific_background_information['input_K_f_u'])
+        result_ = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_f_u'].reshape(1, -1), pre_compute_dict['input_K_f_u'])
         result_ = result_ @ common_background_information['chol_K_uu_inv_t'] @ common_background_information['m_u']
         return result_
         
@@ -167,7 +177,7 @@ def integration_prediction_func(test_input,     # tensor
         final_result = torch.zeros(test_input.shape[0])
 
         for i in range(test_input.shape[0]):
-            interm_term = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_u_f_K_f_u'], data_specific_background_information['input_K_u_fi_K_fi_u_list'][i])
+            interm_term = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_u_f_K_f_u'], pre_compute_dict['input_K_u_fi_K_fi_u_list'][i])
             result_ = _result @ interm_term @ _result.t()
             final_result[i] = result_.item()
             # Store these result for next time use ... 
@@ -185,7 +195,7 @@ def integration_prediction_func(test_input,     # tensor
         for i in range(test_input.shape[0]):
             if i not in data_specific_background_information['expectation_K_uu_dict']:
                 data_specific_background_information['expectation_K_uu_dict'][i] = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_u_f_K_f_u'], \
-                                                                                                        data_specific_background_information['input_K_u_fi_K_fi_u_list'][i])
+                                                                                                        pre_compute_dict['input_K_u_fi_K_fi_u_list'][i])
             final_result[i] = (result_ + (common_background_information['A'].to_dense() * data_specific_background_information['expectation_K_uu_dict'][i].to_dense()).sum()).item()
 
         return final_result
@@ -289,15 +299,13 @@ def pred4all_outputs_inputs(my_model,
 
     elif approach == 'integration':
         # iteratively inference
-        # NOTE old implementation: slow 
-        # for idx in trange(len_outputs, leave=True):
-            # curr_latent_index = all_index_latent[idx]
-            # curr_input = data_inputs[all_index_input[idx]].reshape(-1)
+        pre_compute_dict = prepare_pre_computation(my_model, data_inputs)
         for output_idx in trange(config['n_outputs'], leave=True):
             curr_pred_mean, curr_pred_var = integration_prediction_func(test_input=data_inputs,  # curr_input,
                                                                         output_index=output_idx, # curr_latent_index,
                                                                         my_model=my_model,
                                                                         common_background_information=common_background_information,
+                                                                        pre_compute_dict=pre_compute_dict,
                                                                         config=config,
                                                                         latent_type=latent_type, # or 'NNEncoder'
                                                                         latent_info=latent_info)
