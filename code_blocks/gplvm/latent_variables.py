@@ -254,7 +254,7 @@ class kl_gaussian_loss_term(AddedLossTerm):
         
     def loss(self): 
         
-        # G 
+        # NOTE: this implementation only works when p_x and q_x both diagonal. ONLY KL between scalaler distributions are computed.
         kl_per_latent_dim = kl_divergence(self.q_x, self.p_x).sum(axis=0) # vector of size latent_dim
         kl_per_point = kl_per_latent_dim.sum()/self.n # scalar
         # inside the forward method of variational ELBO, 

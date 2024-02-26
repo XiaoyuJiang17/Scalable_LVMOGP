@@ -81,7 +81,7 @@ class GPLVM(BayesianGPLVM):
 def specify_gplvm(config):
 
     gplvm_model = GPLVM(n = config['n_outputs'],
-                        data_dim = config['n_input_train'], 
+                        data_dim = config['n_input'], 
                         latent_dim = config['trainable_latent_dim'], 
                         n_inducing = config['n_inducing_input'])
     return gplvm_model

@@ -55,7 +55,10 @@ if __name__ == "__main__":
     if config['dataset_type'] == 'synthetic_regression':
         data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, train_sample_idx_ls, test_sample_idx_ls = prepare_synthetic_regression_data(config)
         means, stds = None, None
-    
+
+    elif config['dataset_type'] == 'mocap':
+        data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, train_sample_idx_ls, test_sample_idx_ls, means, stds = prepare_mocap_data(config)
+
     elif config['dataset_type'] == 'spatio_temporal_data':
         data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, lon_lat_tensor, train_sample_idx_ls, test_sample_idx_ls, means, stds = prepare_spatio_temp_data(config)
     
@@ -73,7 +76,17 @@ if __name__ == "__main__":
         if config['trainable_latent_dim'] > 0 and gplvm_init == True:
             ## Initialization by training GPLVM ... 
             print('Initialization by training GPLVM ...')
-            data_Y = data_Y_squeezed.reshape(config['n_outputs'], config['n_input'])[:, :config['n_input_train']]
+            
+            if config['dataset_type'] == 'spatio_temporal_data':
+                # data_Y = data_Y_squeezed.reshape(config['n_outputs'], config['n_input'])[:, :config['n_input_train']]
+                data_Y = data_Y_squeezed.reshape(config['n_outputs'], config['n_input'])
+                data_Y[:, config['n_input_train']:] = torch.nan
+
+            elif config['dataset_type'] == 'synthetic_regression' or config['dataset_type'] == 'mocap':
+                data_Y_squeezed_copy = data_Y_squeezed.clone()
+                data_Y_squeezed_copy[test_sample_idx_ls] = torch.nan
+                data_Y = data_Y_squeezed_copy.reshape(config['n_outputs'], config['n_input'])
+
             gplvm_model = specify_gplvm(config)
             gplvm_likelihood = GaussianLikelihoodWithMissingObs()
             gplvm_model, gplvm_likelihood, losses = train_gplvm(gplvm_model, 

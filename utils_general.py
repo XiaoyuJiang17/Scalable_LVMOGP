@@ -363,6 +363,7 @@ def neg_log_likelihood(Target:Tensor, GaussianMean:Tensor, GaussianVar:Tensor):
     '''
     Evaluate negative log likelihood on given i.i.d. targets, where likelihood function is 
     gaussian with mean GaussianMean variance GaussianVar.
+    Another name for this metric: negative log predictive density (NLPD). 
 
     Args:
         Target (torch.Tensor): The target values.
@@ -382,6 +383,22 @@ def neg_log_likelihood(Target:Tensor, GaussianMean:Tensor, GaussianVar:Tensor):
     nll = 0.5 * torch.mean(torch.log(2 * torch.pi * GaussianVar) + (Target - GaussianMean)**2 / GaussianVar)
     return nll
 
+def root_mean_square_error(Target: Tensor, pred: Tensor):
+    '''
+    Evaluate rmse given target and predictions ... 
+    '''
+    assert Target.shape == pred.shape
+    return (Target - pred).square().mean().sqrt()
+
+def normalised_mean_square_error(Target: Tensor, pred: Tensor):
+    '''
+    NMSE, follows definition given by Chunchao Ma
+    '''
+    assert Target.shape == pred.shape
+    term1 = (Target - pred).square().mean()
+    term2 = (Target - pred.mean()).square().mean()
+    return term1 / term2
+
 ################################################   Dimensionality reduction  ################################################
 from sklearn.decomposition import PCA
 
@@ -396,7 +413,7 @@ def pca_reduction(originalTensor, n_components=2):
 
 ################################################   Helper function:  plot ################################################
 
-def  plot_traindata_testdata_fittedgp(train_X: Tensor, train_Y: Tensor, test_X: Tensor, test_Y: Tensor, gp_X: Tensor, gp_pred_mean: Tensor, gp_pred_std: Tensor, inducing_points_X: Tensor, n_inducing_C:int=15, picture_save_path:str=''):
+def  plot_traindata_testdata_fittedgp(train_X: Tensor, train_Y: Tensor, test_X: Tensor, test_Y: Tensor, gp_X: Tensor, gp_pred_mean: Tensor, gp_pred_std: Tensor, inducing_points_X: Tensor, n_inducing_C:int=15, title=None, picture_save_path:str='', title_fontsize=20):
     '''
     This is a 1 dim plot: train (corss) and test (dot) data, fitted gp all in the same figure.
     The shadowed area is mean +/- 1.96 gp_pred_std.
@@ -421,23 +438,31 @@ def  plot_traindata_testdata_fittedgp(train_X: Tensor, train_Y: Tensor, test_X: 
     gp_X = gp_X.numpy().squeeze()
     inducing_points_X = inducing_points_X.numpy().squeeze()
 
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(8, 6))
     # Plot training data as crosses
-    plt.scatter(train_X_np, train_Y_np, c='r', marker='x', label='Training Data')
+    plt.scatter(train_X_np, train_Y_np, c='r', marker='x', label='Training Data', s=110)
 
     # Plot test data as dots
-    plt.scatter(test_X_np, test_Y_np, c='b', marker='o', label='Test Data', alpha=0.2)
+    plt.scatter(test_X_np, test_Y_np, c='k', marker='o', label='Test Data', alpha=0.5, s=100)
 
     # Plot inducing points on x axis
     plt.scatter(inducing_points_X, [plt.gca().get_ylim()[0] - 1] * n_inducing_C, color='black', marker='^', label='Inducing Locations')
 
-
     # Plot GP predictions as a line
-    plt.plot(gp_X, gp_pred_mean_np, 'k', lw=1, zorder=9)
-    plt.fill_between(gp_X, gp_pred_mean_np - 1.96 * gp_pred_std_np, gp_pred_mean_np + 1.96 * gp_pred_std_np, alpha=0.2, color='k')
+    plt.plot(gp_X, gp_pred_mean_np, 'b', lw=2.5, zorder=9)
+
+    def fill_between_layers(x, mean, std, color, n_layers=2):
+        for i in range(1, n_layers + 1):
+            alpha = (0.13 / n_layers) * (n_layers - i + 1)  # decrease alpha
+            plt.fill_between(x, mean - i * std, mean + i * std, alpha=alpha, color=color)
+
+    n_layers = 2
+    fill_between_layers(gp_X, gp_pred_mean_np, 2 * gp_pred_std_np / n_layers, 'blue', n_layers=n_layers)
+    # plt.fill_between(gp_X, gp_pred_mean_np - 1.96 * gp_pred_std_np, gp_pred_mean_np + 1.96 * gp_pred_std_np, alpha=0.2, color='k')
 
     plt.legend()
-    plt.title("Train/Test Data and Fitted GP")
+    title_ = title if title != None else "Train/Test Data and Fitted GP"
+    plt.title(title_, fontsize=title_fontsize, fontweight='bold')
     plt.tight_layout()
     # plt.savefig(picture_save_path)
     plt.show()

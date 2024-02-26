@@ -1,7 +1,13 @@
 import sys
 sys.path.append('/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/')
 from code_blocks.mlls.variational_elbo import VariationalELBO
-from utils_general import pred4all_outputs_inputs, neg_log_likelihood, prepare_common_background_info
+from utils_general import (
+    pred4all_outputs_inputs, 
+    neg_log_likelihood, 
+    root_mean_square_error,
+    normalised_mean_square_error,
+    prepare_common_background_info
+)
 import torch
 from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, CyclicLR
 from tqdm import trange
@@ -29,16 +35,13 @@ def sample_ids_of_latent_and_input(ls_of_ls_inputs, batch_size_latent, batch_siz
         input_id_list: selected_input_ids
     '''
 
-    assert batch_size_latent <= len(ls_of_ls_inputs)
-    assert batch_size_input <= len(ls_of_ls_inputs[0]) # here assume ls_of_ls_inputs[0] is a list
-    latent_ids = random.sample(range(len(ls_of_ls_inputs)), batch_size_latent)
+    latent_ids = random.choices(range(len(ls_of_ls_inputs)), k=batch_size_latent)
     latent_id_list = [x for x in latent_ids for _ in range(batch_size_input)]
-    input_id_list = []
-    for i in latent_ids:
-        input_ids = random.sample(ls_of_ls_inputs[i], batch_size_input)
-        for j in input_ids:
-            input_id_list.append(j)
-    assert len(latent_id_list) == len(input_id_list) == batch_size_latent*batch_size_input
+    
+    # Use list comprehension for input_id_list
+    input_id_list = [j for i in latent_ids for j in random.choices(ls_of_ls_inputs[i], k=batch_size_input)]
+
+    assert len(latent_id_list) == len(input_id_list) == batch_size_latent * batch_size_input
 
     return latent_id_list, input_id_list
 
@@ -206,17 +209,22 @@ def train_and_eval_lvmogp_model(
 
             # Evaluate on normalized test points
             train_data_predict_ = all_pred_mean_[train_sample_idx_ls]
-            train_rmse_ = (train_data_predict_ - data_Y_squeezed[train_sample_idx_ls]).square().mean().sqrt()
+            train_rmse_ = root_mean_square_error(Target=data_Y_squeezed[train_sample_idx_ls], pred=train_data_predict_)
+            # train_rmse_ = (train_data_predict_ - data_Y_squeezed[train_sample_idx_ls]).square().mean().sqrt()
 
             test_data_predict_ = all_pred_mean_[test_sample_idx_ls]
-            test_rmse_ = (test_data_predict_ - data_Y_squeezed[test_sample_idx_ls]).square().mean().sqrt()
-    
+            test_rmse_ = root_mean_square_error(Target=data_Y_squeezed[test_sample_idx_ls], pred=test_data_predict_)
+            # test_rmse_ = (test_data_predict_ - data_Y_squeezed[test_sample_idx_ls]).square().mean().sqrt()
+
+            train_nmse_ = normalised_mean_square_error(Target=data_Y_squeezed[train_sample_idx_ls], pred=train_data_predict_)
+            test_nmse_ = normalised_mean_square_error(Target=data_Y_squeezed[test_sample_idx_ls], pred=test_data_predict_)
+
             train_nll_ = neg_log_likelihood(Target=data_Y_squeezed[train_sample_idx_ls], GaussianMean=all_pred_mean_[train_sample_idx_ls], GaussianVar=all_pred_var_[train_sample_idx_ls])
             test_nll_ = neg_log_likelihood(Target=data_Y_squeezed[test_sample_idx_ls], GaussianMean=all_pred_mean_[test_sample_idx_ls], GaussianVar=all_pred_var_[test_sample_idx_ls])
 
             with open(results_txt, 'a') as file:
                 file.write(f'Evaluation results for {model_type} model with {approach} approach are: \n')
-                file.write(f'train rmse is {train_rmse_:.4g} \ntest rmse is {test_rmse_:.4g} \ntrain nll is {train_nll_:.4g} \ntest nll is {test_nll_:.4g} \n')
+                file.write(f'train rmse is {train_rmse_:.4g} \n test rmse is {test_rmse_:.4g} \n train nmse is {train_nmse_:.4g} \n test nmse is {test_nmse_:.4g} \n train nll is {train_nll_:.4g} \n test nll is {test_nll_:.4g} \n')
 
             # Evaluate on original test points
             if config['dataset_type'] != 'synthetic_regression':
@@ -225,10 +233,15 @@ def train_and_eval_lvmogp_model(
                 orig_all_pred_var = (all_pred_var_.reshape(config['n_outputs'] , config['n_input']) * (stds**2).unsqueeze(1)).reshape(-1)
                 
                 train_data_predict = orig_all_pred_mean[train_sample_idx_ls]
-                train_rmse = (train_data_predict - orig_data_Y_squeezed[train_sample_idx_ls]).square().mean().sqrt()
+                train_rmse = root_mean_square_error(Target=orig_data_Y_squeezed[train_sample_idx_ls], pred=train_data_predict)
+                # train_rmse = (train_data_predict - orig_data_Y_squeezed[train_sample_idx_ls]).square().mean().sqrt()
 
                 test_data_predict = orig_all_pred_mean[test_sample_idx_ls]
-                test_rmse = (test_data_predict - orig_data_Y_squeezed[test_sample_idx_ls]).square().mean().sqrt()
+                test_rmse = root_mean_square_error(Target=orig_data_Y_squeezed[test_sample_idx_ls], pred=test_data_predict)
+                # test_rmse = (test_data_predict - orig_data_Y_squeezed[test_sample_idx_ls]).square().mean().sqrt()
+
+                train_nmse = normalised_mean_square_error(Target=orig_data_Y_squeezed[train_sample_idx_ls], pred=train_data_predict)
+                test_nmse = normalised_mean_square_error(Target=orig_data_Y_squeezed[test_sample_idx_ls], pred=test_data_predict)
 
                 train_nll = neg_log_likelihood(Target=orig_data_Y_squeezed[train_sample_idx_ls], 
                                                 GaussianMean=orig_all_pred_mean[train_sample_idx_ls], 
@@ -238,11 +251,11 @@ def train_and_eval_lvmogp_model(
                                             GaussianMean=orig_all_pred_mean[test_sample_idx_ls], 
                                             GaussianVar=orig_all_pred_var[test_sample_idx_ls])
                 
-                # TODO: avoid following redundant code.
+                # TODO: try to avoid following redundant code.
                 with open(results_txt, 'a') as file:
                     file.write('On original dataset:\n')
                     file.write(f'Evaluation results for {model_type} model with {approach} approach are: \n')
-                    file.write(f'train rmse is {train_rmse:.4g} \ntest rmse is {test_rmse:.4g} \ntrain nll is {train_nll:.4g} \ntest nll is {test_nll:.4g} \n')
+                    file.write(f'train rmse is {train_rmse:.4g} \n test rmse is {test_rmse:.4g} \n train nmse is {train_nmse:.4g} \n test nmse is {test_nmse:.4g} \n train nll is {train_nll:.4g} \n test nll is {test_nll:.4g} \n')
             else: 
                 pass
     
@@ -394,6 +407,7 @@ def train_and_eval_multiIndepSVGP_model(
 
     train_error_square_sum, test_error_square_sum, train_nll_sum, test_nll_sum, train_error_length, test_error_length = 0., 0., 0., 0., 0., 0.
     original_train_error_square_sum, original_test_error_square_sum, original_train_nll_sum, original_test_nll_sum = 0., 0., 0., 0.
+    train_list_pred_mean_tensors,  test_list_pred_mean_tensors = [], []
 
     for j in range(config['n_outputs']):
 
@@ -403,14 +417,22 @@ def train_and_eval_multiIndepSVGP_model(
         # Inference for train and test data
         curr_train_output_dist = curr_likelihood(curr_model(list_train_X[j]))
         curr_test_output_dist  = curr_likelihood(curr_model(list_test_X[j]))
+        curr_train_pred_mean = curr_train_output_dist.loc.detach()
+        curr_test_pred_mean = curr_test_output_dist.loc.detach()
 
         # RMSE on normalized data
-        curr_train_suqare_errors = (curr_train_output_dist.loc.detach() - list_train_Y[j]).square()
-        curr_test_square_errors = (curr_test_output_dist.loc.detach() - list_test_Y[j]).square()
+        curr_train_suqare_errors = (curr_train_pred_mean - list_train_Y[j]).square()
+        curr_test_square_errors = (curr_test_pred_mean - list_test_Y[j]).square()
         train_error_square_sum += curr_train_suqare_errors.sum()
         test_error_square_sum  += curr_test_square_errors.sum()
 
+        # prepare for NMSE on normalized data
+
+        train_list_pred_mean_tensors.append(curr_train_pred_mean)
+        test_list_pred_mean_tensors.append(curr_test_pred_mean)
+
         # NLL on normalized data
+
         train_nll_ = neg_log_likelihood(list_train_Y[j], 
                                         curr_train_output_dist.loc.detach(), 
                                         curr_train_output_dist.variance.detach())
@@ -424,6 +446,7 @@ def train_and_eval_multiIndepSVGP_model(
 
         ''' ------------ ------------ ------------ ------------ ------------ ------------ ------------'''
         if means != None:
+        # On original data (before being transformed based on statistics from train split)
             original_train_Y_j = (list_train_Y[j] * stds[j].item() )+ means[j].item()
             original_test_Y_j = (list_test_Y[j] * stds[j].item() )+ means[j].item()
 
@@ -439,7 +462,10 @@ def train_and_eval_multiIndepSVGP_model(
             original_train_error_square_sum += original_curr_train_suqare_errors.sum()
             original_test_error_square_sum  += original_curr_test_square_errors.sum()
 
+            # No NMSE on original data, looks strange!
+
             # NLL on original data
+
             original_train_nll_ = neg_log_likelihood(original_train_Y_j, 
                                             original_curr_train_pred_loc, 
                                             original_curr_train_pred_var)
@@ -456,10 +482,17 @@ def train_and_eval_multiIndepSVGP_model(
         test_error_length += len(list_test_Y[j])
 
     # ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- -----
+    train_pred_mean_cat, test_pred_mean_cat = torch.cat(train_list_pred_mean_tensors, dim=0), torch.cat(test_list_pred_mean_tensors, dim=0)
+    train_target_cat, test_target_cat = torch.tensor(np.array(list_train_Y).flatten()), torch.tensor(np.array(list_test_Y).flatten())
+    train_nmse = (train_error_square_sum / train_error_length) / (train_target_cat - train_pred_mean_cat.mean()).mean()
+    test_nmse = (test_error_square_sum / test_error_length) / (test_target_cat - test_pred_mean_cat.mean()).mean()
+    
     with open(results_txt, 'a') as file:
         file.write('Evaluation on normalized data:\n')
         file.write(f'global train rmse is {((train_error_square_sum / train_error_length).sqrt()):.4g}\n')
         file.write(f'global test rmse is {((test_error_square_sum / test_error_length).sqrt()):.4g}\n')
+        file.write(f'global train nmse is {(train_nmse):.4g}\n')
+        file.write(f'global test nmse is {(test_nmse):.4g}\n')
         file.write(f'global train nll is {(train_nll_sum / train_error_length):.4g}\n')
         file.write(f'global test nll is {(test_nll_sum / test_error_length):.4g}\n')
         if means != None:

@@ -29,7 +29,8 @@ def prepare_synthetic_regression_data(config):
     assert data_inputs.shape[0] == config['n_input']
     assert data_Y_squeezed.shape[0] == (config['n_input'] * config['n_outputs'])
 
-    np.random.seed(config['random_seed'])
+    data_random_seed = config['data_random_seed'] if 'data_random_seed' in config else 1
+    np.random.seed(data_random_seed)
     list_expri_random_seeds = np.random.randn(config['n_outputs'])
 
     ls_of_ls_train_input = []
@@ -49,6 +50,54 @@ def prepare_synthetic_regression_data(config):
         test_sample_idx_ls = np.concatenate((test_sample_idx_ls, list(np.array(test_index) + config['n_input']*i)))
 
     return data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, train_sample_idx_ls, test_sample_idx_ls
+
+def prepare_mocap_data(config):
+    '''
+    Prepare data for MOCAP dataset.
+    '''
+    # NOTE: first column used as index ... 
+    data_Y = Tensor(pd.read_csv(config['data_Y_squeezed_path'], index_col=0).to_numpy())
+    n_outputs, n_input = data_Y.shape[0], data_Y.shape[-1]
+    assert n_outputs == config['n_outputs']
+    assert n_input == config['n_input']
+
+    translate_bias = config['min_input_bound']
+    translate_scale = (config['max_input_bound'] - config['min_input_bound']) / config['n_input']
+
+    data_inputs =  translate_bias + translate_scale * ( Tensor([i for i in range(config['n_input'])]) )
+
+    data_random_seed = config['data_random_seed'] if 'data_random_seed' in config else 1
+    np.random.seed(data_random_seed)
+    list_expri_random_seeds = np.random.randn(config['n_outputs'])
+
+    ls_of_ls_train_input = []
+    ls_of_ls_test_input = []
+    
+    train_sample_idx_ls, test_sample_idx_ls = [], []
+
+    means, stds = torch.zeros(config['n_outputs']), torch.zeros(config['n_outputs'])
+
+    for i in range(config['n_outputs']):
+        # iterate across different output functions
+        random.seed(list_expri_random_seeds[i])
+        train_index = random.sample(range(config['n_input']), config['n_input_train'])
+        test_index = [index for index in range(config['n_input']) if index not in train_index]
+        ls_of_ls_train_input.append(train_index)
+        ls_of_ls_test_input.append(test_index)
+
+        # compute mean and std for this output:
+        means[i] = data_Y[i, train_index].mean()
+        stds[i] = data_Y[i, train_index].std()
+
+        data_Y[i, :] = (data_Y[i, :] - means[i]) / (stds[i] + 1e-8)
+
+        train_sample_idx_ls = np.concatenate((train_sample_idx_ls, list(np.array(train_index) + config['n_input']*i)))
+        test_sample_idx_ls = np.concatenate((test_sample_idx_ls, list(np.array(test_index) + config['n_input']*i)))
+
+    data_Y_squeezed = data_Y.reshape(-1)
+    assert data_Y_squeezed.shape[0] == (config['n_input'] * config['n_outputs'])
+    
+    return data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, train_sample_idx_ls, test_sample_idx_ls, means, stds
 
 
 def prepare_spatio_temp_data(config):
