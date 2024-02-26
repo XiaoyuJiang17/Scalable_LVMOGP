@@ -106,7 +106,7 @@ def integration_prediction_func(test_input,     # tensor
     Current implementation support doing inference for multiple inputs of same output (latent) simutanously ... 
     '''
     input_K_f_u = my_model.covar_module_input(test_input, my_model.variational_strategy.inducing_points_input.data).to_dense().data
-    input_K_u_fi_K_fi_u_list = [torch.outer(input_K_f_u[i, :], input_K_f_u[i, :]) for i in range(input_K_f_u.shape[0])]
+    input_K_u_fi_K_fi_u_list = [torch.outer(input_K_f_u[i, :], input_K_f_u[i, :]) for i in range(test_input.shape[0])]
 
     if latent_type == None:
         # Mean and covariance of latent distribution.
@@ -164,9 +164,9 @@ def integration_prediction_func(test_input,     # tensor
         result_ = common_background_information['m_u']
         _result = result_ @ common_background_information['chol_K_uu_inv_t']._transpose_nonbatch()
 
-        final_result = torch.zeros(len(input_K_u_fi_K_fi_u_list))
+        final_result = torch.zeros(test_input.shape[0])
 
-        for i in range(len(input_K_u_fi_K_fi_u_list)):
+        for i in range(test_input.shape[0]):
             interm_term = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_u_f_K_f_u'], data_specific_background_information['input_K_u_fi_K_fi_u_list'][i])
             result_ = _result @ interm_term @ _result.t()
             final_result[i] = result_.item()
@@ -180,13 +180,13 @@ def integration_prediction_func(test_input,     # tensor
 
         result_ = common_background_information['var_H'] * common_background_information['var_X']
 
-        final_result = torch.zeros(len(input_K_u_fi_K_fi_u_list))
+        final_result = torch.zeros(test_input.shape[0])
 
-        for i in range(len(input_K_u_fi_K_fi_u_list)):
+        for i in range(test_input.shape[0]):
             if i not in data_specific_background_information['expectation_K_uu_dict']:
-                data_specific_background_information['expectation_K_uu_dict'] = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_u_f_K_f_u'], \
+                data_specific_background_information['expectation_K_uu_dict'][i] = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_u_f_K_f_u'], \
                                                                                                         data_specific_background_information['input_K_u_fi_K_fi_u_list'][i])
-            final_result[i] = (result_ + (common_background_information['A'] * data_specific_background_information['expectation_K_uu_dict'][i]).sum()).item()
+            final_result[i] = (result_ + (common_background_information['A'].to_dense() * data_specific_background_information['expectation_K_uu_dict'][i].to_dense()).sum()).item()
 
         return final_result
     
