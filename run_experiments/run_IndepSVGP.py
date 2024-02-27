@@ -50,6 +50,9 @@ if __name__ == "__main__":
         data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, train_sample_idx_ls, test_sample_idx_ls = prepare_synthetic_regression_data(config)
         means, stds = None, None
     
+    elif config['dataset_type'] == 'mocap':
+        data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, train_sample_idx_ls, test_sample_idx_ls, means, stds = prepare_mocap_data(config)
+    
     elif config['dataset_type'] == 'spatio_temporal_data':
         data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, lon_lat_tensor, train_sample_idx_ls, test_sample_idx_ls, means, stds = prepare_spatio_temp_data(config)
     

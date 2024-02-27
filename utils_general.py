@@ -19,10 +19,16 @@ import matplotlib.pyplot as plt
 def helper_specify_kernel_by_name(kernel_name, input_dim=None):
     # Kernel (acting on index dimensions)
     '''
-    input_dim is a MUST for RBFKernel
+    input_dim is a MUST for RBFKernel (RAD), otherwise common lengthscale.
     '''
     if kernel_name == 'Scale_RBF':
         return ScaleKernel(RBFKernel(ard_num_dims=input_dim))
+    
+    elif kernel_name == 'Scale_Matern32':
+        return ScaleKernel(MaternKernel(nu=1.5))
+    
+    elif kernel_name == 'Scale_Matern52':
+        return ScaleKernel(MaternKernel(nu=2.5))
     
     elif kernel_name == 'Periodic_times_Scale_RBF':
         return PeriodicKernel() * ScaleKernel(RBFKernel())
