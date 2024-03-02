@@ -8,20 +8,20 @@ max_input_bound: 20
 
 # model
 gplvm_init: True
-n_outputs: 22
+n_outputs: 31
 n_input: 309
-n_input_train: 154  #  # of train inputs for every output  
-n_input_test: 155   #  # of test inputs for every output  
+n_input_train: 31  #  # of train inputs for every output  
+n_input_test: 278   #  # of test inputs for every output  
 input_dim: 1
-latent_dim: 2
-trainable_latent_dim: 2
+latent_dim: 3
+trainable_latent_dim: 3
 NNEncoder: False
 # (1) trainable_latent_dim = None: only 1 part, all trainable ; (but initialization need to be re-implement)
 # (2) trainable_latent_dim = 0: only 1 part, all fixed ;  
 # (3) 0 < trainable_latent_dim < latent_dim: 2 parts ; 
 # (4) trainable_latent_dim = latent_dim: only 1 part, all trainable ; (together with random initialization)
 n_inducing_input: 30
-n_inducing_latent: 20
+n_inducing_latent: 50
 batch_size_latent: 50
 batch_size_input:  20
 pca: False

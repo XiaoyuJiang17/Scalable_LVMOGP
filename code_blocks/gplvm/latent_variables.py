@@ -109,7 +109,7 @@ class VariationalCatLatentVariable(LatentVariable):
     Supports flexible latent variables with only parts of them trainable, i.e Cat of two parts, one trainable, one fixed.
 
     n: number of latent (outputs)
-    data_dim: number of inputs (n_inputs)
+    data_dim: number of inputs (n_inputs for training! not total n_inputs)
     """
 
     def __init__(self, n, data_dim, latent_dim, X_init, prior_x, trainable_latent_dim=None):

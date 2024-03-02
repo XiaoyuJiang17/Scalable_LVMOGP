@@ -1,6 +1,7 @@
 import sys
 sys.path.append('/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/')
 from code_blocks.mlls.variational_elbo import VariationalELBO
+from code_blocks.mlls.sum_variational_elbo import SumVariationalELBO
 from utils_general import (
     pred4all_outputs_inputs, 
     neg_log_likelihood, 
@@ -15,9 +16,9 @@ import matplotlib.pyplot as plt
 import time
 import random
 import numpy as np
-from torch import Tensor
 import copy
 from linear_operator.utils.errors import NotPSDError
+import gpytorch
 
 ################################################   Train and Evaluate LVMOGP Model  ################################################
 
@@ -41,6 +42,7 @@ def sample_ids_of_latent_and_input(ls_of_ls_inputs, batch_size_latent, batch_siz
     # Use list comprehension for input_id_list
     input_id_list = [j for i in latent_ids for j in random.choices(ls_of_ls_inputs[i], k=batch_size_input)]
 
+    # Recall, in variational strategy, two list of 'inputs' jointly determine the corresponding target. 
     assert len(latent_id_list) == len(input_id_list) == batch_size_latent * batch_size_input
 
     return latent_id_list, input_id_list
@@ -79,7 +81,9 @@ def train_and_eval_lvmogp_model(
         stds=None,
         args=None):
     
-    number_all = config['n_outputs'] * config['n_input_train']
+    number_all_train_data = config['number_all_train_data'] if 'number_all_train_data' in config else config['n_outputs'] * config['n_input_train']
+    correction_term = (config['n_outputs'] * config['n_input_train'] ) / number_all_train_data # = 1 if all outputs have same number of training inputs.
+
     results_txt = f'{results_folder_path}/results.txt'
     with open(results_txt, 'w') as file:
         file.write(f'Random seed: {args.random_seed}\n')
@@ -134,11 +138,11 @@ def train_and_eval_lvmogp_model(
             added_loss = torch.zeros_like(log_likelihood_batch)
             for added_loss_term in my_model.added_loss_terms():
                 # ONLY one added loss here, which is KL in latent space
-                added_loss.add_(config['alpha'] * added_loss_term.loss())
+                added_loss.add_(correction_term * config['alpha'] * added_loss_term.loss())
             loss += added_loss
 
         ## KL divergence term
-        kl_divergence = my_model.variational_strategy.kl_divergence().div(number_all / config['beta'])
+        kl_divergence = my_model.variational_strategy.kl_divergence().div(number_all_train_data / config['beta'])
         loss = loss / config['num_latent_MC'] + kl_divergence
         loss.backward()
 
@@ -223,11 +227,13 @@ def train_and_eval_lvmogp_model(
             test_nll_ = neg_log_likelihood(Target=data_Y_squeezed[test_sample_idx_ls], GaussianMean=all_pred_mean_[test_sample_idx_ls], GaussianVar=all_pred_var_[test_sample_idx_ls])
 
             with open(results_txt, 'a') as file:
+                file.write('On NORMALIZED dataset:\n')
                 file.write(f'Evaluation results for {model_type} model with {approach} approach are: \n')
                 file.write(f'train rmse is {train_rmse_:.4g} \n test rmse is {test_rmse_:.4g} \n train nmse is {train_nmse_:.4g} \n test nmse is {test_nmse_:.4g} \n train nll is {train_nll_:.4g} \n test nll is {test_nll_:.4g} \n')
 
             # Evaluate on original test points
-            if config['dataset_type'] != 'synthetic_regression':
+            # if config['dataset_type'] != 'synthetic_regression':
+            if means != None:
                 orig_data_Y_squeezed = (data_Y_squeezed.reshape(config['n_outputs'] , config['n_input']) * stds.unsqueeze(1) + means.unsqueeze(1)).reshape(-1)    
                 orig_all_pred_mean = (all_pred_mean_.reshape(config['n_outputs'] , config['n_input']) * stds.unsqueeze(1) + means.unsqueeze(1)).reshape(-1)
                 orig_all_pred_var = (all_pred_var_.reshape(config['n_outputs'] , config['n_input']) * (stds**2).unsqueeze(1)).reshape(-1)
@@ -253,7 +259,7 @@ def train_and_eval_lvmogp_model(
                 
                 # TODO: try to avoid following redundant code.
                 with open(results_txt, 'a') as file:
-                    file.write('On original dataset:\n')
+                    file.write('On ORIGINAL dataset:\n')
                     file.write(f'Evaluation results for {model_type} model with {approach} approach are: \n')
                     file.write(f'train rmse is {train_rmse:.4g} \n test rmse is {test_rmse:.4g} \n train nmse is {train_nmse:.4g} \n test nmse is {test_nmse:.4g} \n train nll is {train_nll:.4g} \n test nll is {test_nll:.4g} \n')
             else: 
@@ -266,13 +272,151 @@ def mini_batching_sampling_func(num_inputs, batch_size):
     idx_list = random.sample(range(num_inputs), batch_size)
     return idx_list
 
+# helper function to store list of indepSVGP models and list of their likelihoods.
 def save_model_and_likelihoods(multi_variational_igp, filename):
     state_dicts = {
         'models': [model.state_dict() for model in multi_variational_igp.models],
         'likelihoods': [likelihood.state_dict() for likelihood in multi_variational_igp.likelihoods]
     }
     torch.save(state_dicts, filename)
-                
+
+def train_and_eval_multiIndepSVGP_parallel(
+        data_inputs,
+        data_Y_squeezed,
+        ls_of_ls_train_input,
+        ls_of_ls_test_input,
+        train_sample_idx_ls,
+        test_sample_idx_ls,
+        my_multiIGP_parallel, # Multi_Variational_IGP_parallel
+        config,
+        results_folder_path,
+        means,
+        stds,
+        args):
+    
+    results_txt = f'{results_folder_path}/results.txt'
+    with open(results_txt, 'w') as file:
+        file.write(f'Results for random seed: {args.random_seed}\n')
+
+    ########    Prepare Datasets for All Outputs    ########
+        
+    # The following lists consist of datasets for all outputs.
+    list_train_X, list_train_Y = [], [] 
+    list_test_X, list_test_Y = [], []
+
+    # split data_Y_squeezed into train/test part. NOTE: that's train/test target data for all outputs.
+    data_Y_train_squeezed = data_Y_squeezed[train_sample_idx_ls]
+    data_Y_test_squeezed = data_Y_squeezed[test_sample_idx_ls]
+
+    n_input_test = config['n_input'] - config['n_input_train']
+    ##### ------------------------------------------------------------------------
+    for i in range(config['n_outputs']):
+        # start and end for current output, idx used to pick data for only current output
+        idgp_train_start = i * config['n_input_train']
+        idgp_train_end = idgp_train_start + config['n_input_train']
+
+        idgp_test_start = i * n_input_test
+        idgp_test_end = idgp_test_start + n_input_test
+
+        # training data for current output
+        train_X = data_inputs[ls_of_ls_train_input[i]]
+        train_Y = data_Y_train_squeezed[idgp_train_start:idgp_train_end]
+        assert train_X.shape ==  train_Y.shape == torch.Size([config['n_input_train']])
+        list_train_X.append(train_X)
+        list_train_Y.append(train_Y)
+
+        # testing data for current output
+        test_X = data_inputs[ls_of_ls_test_input[i]]
+        test_Y = data_Y_test_squeezed[idgp_test_start:idgp_test_end]
+        assert test_X.shape ==  test_Y.shape == torch.Size([n_input_test])
+        list_test_X.append(test_X)
+        list_test_Y.append(test_Y)
+    
+    ########    Training    ########
+
+    my_model = my_multiIGP_parallel.ModelList
+    my_likelihood = my_multiIGP_parallel.LikelihoodList
+
+    my_model.train()
+    my_likelihood.train()
+
+    my_optimizer = torch.optim.Adam(my_model.parameters(), lr=config['lr'])
+
+    if 'scheduler' not in config or config['scheduler'] == CyclicLR: # Default choice
+        step_size_up = config['step_size_up'] if 'step_size_up' in config else 30
+        my_scheduler = CyclicLR(my_optimizer, base_lr=config['lr'], max_lr=0.2*config['lr'], step_size_up=step_size_up, mode='triangular', cycle_momentum=False)
+
+    elif config['scheduler'] == StepLR:
+        step_size = config['step_size'] if 'step_size' in config else 20
+        gamma = config['gamma'] if 'gamma' in config else 0.95
+        my_scheduler = StepLR(my_optimizer, step_size=step_size, gamma=gamma) 
+
+    # curr_scheduler = CyclicLR(curr_optimizer, base_lr=config['lr'], max_lr=0.2*config['lr'], step_size_up=config['step_size_up'], mode='triangular', cycle_momentum=False)
+    
+    num_data_list = [len(_list) for _list in ls_of_ls_train_input]
+    mll = SumVariationalELBO(my_model, num_data_list)
+
+    iterator = trange(config['n_iterations'], leave=True)
+    start_time = time.time()
+    for i in iterator: # Mini-batch training ... 
+        # TODO: only works when all outputs has the same number of data points
+        mini_batch_idx = random.choices(range(list_train_X[0].shape[0]), k=config['batch_size_input'])
+        list_train_input_all_outputs = [list_train_X[j][mini_batch_idx] for j in range(config['n_outputs'])]
+        list_train_target_all_outputs = [list_train_Y[j][mini_batch_idx] for j in range(config['n_outputs'])]
+
+        my_optimizer.zero_grad()
+        output = my_model(*list_train_input_all_outputs)
+        loss = -mll(output, list_train_target_all_outputs)
+        loss.backward()
+        iterator.set_description('Loss: ' + str(float(np.round(loss.item(),3))) + ", iter no: " + str(i) + '/' + str(config['n_iterations']))
+
+        # clip gradients
+        # torch.nn.utils.clip_grad_norm_(my_model.parameters(), config['model_max_grad_norm'])
+
+        my_optimizer.step()
+        my_scheduler.step()
+
+    end_time = time.time()
+    total_training_time = end_time - start_time
+
+    with open(results_txt, 'a') as file:
+        file.write(f'Total time: {total_training_time}\n')
+
+    torch.save(my_model, f'{results_folder_path}/MultiIGPs_parallel_models.pth')
+
+    ########    Testing    ########
+
+    my_model.eval()
+    my_likelihood.eval()
+
+    with torch.no_grad(): # gpytorch.settings.fast_pred_var()
+        list_test_input_all_outputs = [list_test_X[j] for j in range(config['n_outputs'])]
+        predictions = my_likelihood(*my_model(*list_test_input_all_outputs))
+    
+    tensor_test_target_all_outputs = torch.tensor([list_test_Y[j] for j in range(config['n_outputs'])]).reshape(-1)
+    tensor_test_pred_mean_all_outputs = torch.tensor([prediction.mean.tolist() for prediction in predictions])
+    tensor_test_pred_std_all_outputs = torch.tensor([prediction.stddev.tolist() for prediction in predictions])
+
+    test_rmse = root_mean_square_error(tensor_test_target_all_outputs, tensor_test_pred_mean_all_outputs)
+
+    test_nll = neg_log_likelihood(tensor_test_target_all_outputs, 
+                                  tensor_test_pred_mean_all_outputs, 
+                                  tensor_test_pred_std_all_outputs.square())
+    
+    test_nmse = normalised_mean_square_error(tensor_test_target_all_outputs, tensor_test_pred_mean_all_outputs)
+
+    with open(results_txt, 'a') as file:
+        file.write('Evaluation on normalized data:\n')
+        file.write(f'global test rmse is {test_rmse:.4g}\n')
+        file.write(f'global test nmse is {(test_nmse):.4g}\n')
+        file.write(f'global test nll is {test_nll:.4g}\n')
+    
+    if means != None:
+        # TODO
+        pass
+        # We also evaluate on original dataset (instead of normalized data)
+
+
 def train_and_eval_multiIndepSVGP_model(
         data_inputs,
         data_Y_squeezed,
@@ -288,6 +432,7 @@ def train_and_eval_multiIndepSVGP_model(
         args):
     
     '''
+    NOTE try indepdent svgp models one by one, which is really slow. Prefer to use parallel based implementation ... 
     First 6 arguments are returned from functions in prepare_data.py, these data are naturally designed for MOGP.
     To train multiple IGPs, we need to reconstruct datasets based on them.
     '''
@@ -330,7 +475,7 @@ def train_and_eval_multiIndepSVGP_model(
     #### ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- 
     ls_training_time = []
 
-    ##### Train and Evaluate IGPs one by one
+    ##### Train and Evaluate IGPs one by one (slow!)
     
     '''########  Training  ########'''
 
@@ -414,6 +559,9 @@ def train_and_eval_multiIndepSVGP_model(
         curr_model = my_model.get_model(j)
         curr_likelihood = my_model.get_likelihood(j)
 
+        curr_model.eval()
+        curr_likelihood.eval()
+
         # Inference for train and test data
         curr_train_output_dist = curr_likelihood(curr_model(list_train_X[j]))
         curr_test_output_dist  = curr_likelihood(curr_model(list_test_X[j]))
@@ -484,8 +632,8 @@ def train_and_eval_multiIndepSVGP_model(
     # ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- -----
     train_pred_mean_cat, test_pred_mean_cat = torch.cat(train_list_pred_mean_tensors, dim=0), torch.cat(test_list_pred_mean_tensors, dim=0)
     train_target_cat, test_target_cat = torch.tensor(np.array(list_train_Y).flatten()), torch.tensor(np.array(list_test_Y).flatten())
-    train_nmse = (train_error_square_sum / train_error_length) / (train_target_cat - train_pred_mean_cat.mean()).mean()
-    test_nmse = (test_error_square_sum / test_error_length) / (test_target_cat - test_pred_mean_cat.mean()).mean()
+    train_nmse = (train_error_square_sum / train_error_length) / (train_target_cat - train_pred_mean_cat.mean()).square().mean()
+    test_nmse = (test_error_square_sum / test_error_length) / (test_target_cat - test_pred_mean_cat.mean()).square().mean()
     
     with open(results_txt, 'a') as file:
         file.write('Evaluation on normalized data:\n')
@@ -536,12 +684,18 @@ def helper_init_model_and_likeli(my_model, config, my_likelihood=None, only_init
         my_model.covar_module_input.kernels[1].base_kernel.lengthscale = config['2ndKernel_lengthscale_init']
     
     if config['input_kernel_type'] == 'Scale_RBF':
-        # using default init ... 
-        pass
+        
+        if config['dataset_type'] == 'exchange':
+            my_model.covar_module_input.base_kernel.lengthscale = config['lengthscale_init']
+            my_model.covar_module_input.outputscale = config['outputscale_init']
+
+        else:
+            # Or using default init ... 
+            pass
 
     if not only_init_model:
         # Init inducing points in input space
-        my_model.variational_strategy.inducing_points_input.data = Tensor(np.linspace(config['init_inducing_input_LB'], config['init_inducing_input_UB'], config['n_inducing_input']).reshape(-1, 1)).to(torch.double) 
+        my_model.variational_strategy.inducing_points_input.data = torch.tensor(np.linspace(config['init_inducing_input_LB'], config['init_inducing_input_UB'], config['n_inducing_input']).reshape(-1, 1)).to(torch.double) 
         
         # Init noise scale in likelihood
         my_likelihood.noise = config['init_likelihood_noise']

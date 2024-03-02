@@ -13,6 +13,7 @@ class Variational_GP(ApproximateGP):
     def __init__(self, 
                  inducing_points, 
                  kernel_type='Scale_RBF', 
+                 likelihood=GaussianLikelihood(),             # newly added, to support parallel implementation ...  
                  learn_inducing_locations=True,
                  input_dim=1):
         
@@ -20,6 +21,7 @@ class Variational_GP(ApproximateGP):
         variational_strategy = VariationalStrategy(self, inducing_points, variational_distribution, learn_inducing_locations=learn_inducing_locations)
         super(Variational_GP, self).__init__(variational_strategy)
         self.mean_module = gpytorch.means.ZeroMean()
+        self.likelihood = likelihood
 
         self.covar_module_input = helper_specify_kernel_by_name(kernel_type, input_dim=input_dim)
 
@@ -38,6 +40,7 @@ class Multi_Variational_IGP:
                  learn_inducing_locations=True,
                  input_dim = 1):
         
+        '''NOTE this implementation only support GaussianLikelihood now ... '''
         self.models = [Variational_GP(inducing_points, kernel_type, learn_inducing_locations, input_dim) for _ in range(num_models)]
         self.likelihoods = [GaussianLikelihood() for _ in range(num_models)]
 
@@ -55,3 +58,40 @@ class Multi_Variational_IGP:
             return self.likelihoods[likelihood_number]
         else:
             raise ValueError(f"Likelihood number must be between 1 and {len(self.likelihoods)}")
+
+class Multi_Variational_IGP_parallel:
+    '''construct independent SVGP model in a parallel manner'''
+    def __init__(
+            self,
+            num_models, 
+            inducing_points, 
+            init_likelihood_noise, 
+            kernel_type='Scale_RBF', 
+            likelihood=GaussianLikelihood(),
+            learn_inducing_locations=True,
+            input_dim=1):
+        
+        self._models = [Variational_GP(inducing_points=inducing_points, 
+                                  kernel_type=kernel_type, 
+                                  learn_inducing_locations=learn_inducing_locations, 
+                                  input_dim=input_dim,
+                                  likelihood=likelihood
+                                  ) for _ in range(num_models)]
+        self.ModelList = gpytorch.models.IndependentModelList(*self._models)
+
+        for likelihood in [mdl.likelihood for mdl in self._models]:
+            likelihood.noise = init_likelihood_noise
+
+        self.LikelihoodList = gpytorch.likelihoods.LikelihoodList(*[mdl.likelihood for mdl in self._models])
+
+    def get_model(self, model_number):
+        if 0 <= model_number <= len(self._models) - 1:
+            return self._models[model_number]
+        else:
+            raise ValueError(f"Model number must be between 1 and {len(self._models)}")
+    
+    def get_likelihood(self, likelihood_number):
+        if 0 <= likelihood_number <= len(self._models) - 1:
+            return self._models[likelihood_number].likelihood
+        else:
+            raise ValueError(f"Likelihood number must be between 1 and {len(self._models)}")

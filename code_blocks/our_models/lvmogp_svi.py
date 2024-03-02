@@ -20,7 +20,7 @@ class LVMOGP_SVI(BayesianGPLVM_):
 
     def __init__(self, 
                  n_outputs, 
-                 n_input, 
+                 n_input,                    # NOTE PAY Strong ATTENTION, not total n_inputs, number of inputs for training!
                  input_dim, 
                  latent_dim,                 # This refers to the total dim: both trainable and non-trainable
                  n_inducing_input, 

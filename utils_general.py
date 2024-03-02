@@ -4,7 +4,7 @@ from code_blocks.kernels.periodic_inputs_rbfkernel import PeriodicInputsRBFKerne
 from code_blocks.kernels.periodic_inputs_maternkernel import PeriodicInputsMaternKernel
 from gpytorch.kernels import ScaleKernel, RBFKernel, MaternKernel, PeriodicKernel
 import torch
-from torch import Tensor
+# from torch import torch.tensor
 from linear_operator.operators import KroneckerProductLinearOperator, TriangularLinearOperator, LinearOperator, CholLinearOperator
 from linear_operator.utils.cholesky import psd_safe_cholesky
 import numpy as np
@@ -81,7 +81,7 @@ def prepare_common_background_info(my_model, config):
                         'Sigma_u': covar_u,
                         'A': chol_K_uu_inv_t @ (covar_u - torch.eye(covar_u.shape[0])) @ chol_K_uu_inv_t._transpose_nonbatch(),
                         'var_H': my_model.covar_module_latent.outputscale.data, # based on the use of RBF kernel
-                        'var_X': my_model.covar_module_input(Tensor([0.])).to_dense().item(), # This implementation works for any kind of kernel.
+                        'var_X': my_model.covar_module_input(torch.tensor([0.])).to_dense().item(), # This implementation works for any kind of kernel.
                         #'var_X': my_model.covar_module_input.outputscale.data,  # 
                         'W': my_model.covar_module_latent.base_kernel.lengthscale.data.reshape(-1)**2
                         }
@@ -155,14 +155,14 @@ def integration_prediction_func(test_input,     # tensor
         result = torch.exp(-0.5 * x_mu @ cov_inv @ x_mu.t()) / norm_factor
         return result.item()
 
-    def G(h:Tensor, common_background_information=common_background_information, data_specific_background_information=data_specific_background_information):
+    def G(h:torch.tensor, common_background_information=common_background_information, data_specific_background_information=data_specific_background_information):
 
         mu = data_specific_background_information['m_plus']
         cov_diag = data_specific_background_information['Sigma_plus'] + common_background_information['W']
         result = multivariate_gaussian_pdf(h, mu, cov_diag)
         return common_background_information['constant_c'] * result
 
-    def R(h_1:Tensor, h_2:Tensor, common_background_information=common_background_information, data_specific_background_information=data_specific_background_information):
+    def R(h_1:torch.tensor, h_2:torch.tensor, common_background_information=common_background_information, data_specific_background_information=data_specific_background_information):
         mu_1 = h_2
         cov_diag_1 = 2 * common_background_information['W']
         mu_2 = (h_1 + h_2) / 2
@@ -190,6 +190,7 @@ def integration_prediction_func(test_input,     # tensor
             if i not in data_specific_background_information['expectation_K_uu_dict']:
                 data_specific_background_information['expectation_K_uu_dict'][i] = interm_term
 
+        assert torch.all(final_result > 0.)
         return final_result
         
     def expectation_gamma(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information):
@@ -202,8 +203,11 @@ def integration_prediction_func(test_input,     # tensor
             if i not in data_specific_background_information['expectation_K_uu_dict']:
                 data_specific_background_information['expectation_K_uu_dict'][i] = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_u_f_K_f_u'], \
                                                                                                         pre_compute_dict['input_K_u_fi_K_fi_u_list'][i])
+
+            assert torch.all(data_specific_background_information['expectation_K_uu_dict'][i].to_dense()) > 0. 
             final_result[i] = (result_ + (common_background_information['A'].to_dense() * data_specific_background_information['expectation_K_uu_dict'][i].to_dense()).sum()).item()
 
+        assert torch.all(final_result > 0.)
         return final_result
     
     def integration_predictive_mean(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information):
@@ -222,8 +226,8 @@ def integration_prediction_func(test_input,     # tensor
     
     # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-    expectation_latent_K_f_u = Tensor([G(my_model.variational_strategy.inducing_points_latent.data[i]).item() for i in range(config['n_inducing_latent'])])
-    expectation_latent_K_u_f_K_f_u = Tensor([R(my_model.variational_strategy.inducing_points_latent.data[i], my_model.variational_strategy.inducing_points_latent.data[j]).item() \
+    expectation_latent_K_f_u = torch.tensor([G(my_model.variational_strategy.inducing_points_latent.data[i]).item() for i in range(config['n_inducing_latent'])])
+    expectation_latent_K_u_f_K_f_u = torch.tensor([R(my_model.variational_strategy.inducing_points_latent.data[i], my_model.variational_strategy.inducing_points_latent.data[j]).item() \
                                             for j in range(config['n_inducing_latent']) for i in range(config['n_inducing_latent'])]).reshape(config['n_inducing_latent'], config['n_inducing_latent'])
 
     data_specific_background_information['expectation_latent_K_f_u'] = expectation_latent_K_f_u
@@ -337,13 +341,14 @@ def evaluate_on_single_output(
         all_pred_var4visual
     ):
     # Pick the index of the funtion to show
-    # function_index = 982
 
     performance_dirct = {}
     train_input = data_inputs[ls_of_ls_train_input[function_index]]
     train_start = 0
+
     for i in range(function_index):
         train_start += len(ls_of_ls_train_input[i]) # don't assume every output has the same length of inputs
+    
     train_end = train_start + len(ls_of_ls_train_input[function_index])
     train_target = data_Y_squeezed[train_sample_idx_ls][train_start:train_end]
     train_predict = all_pred_mean[train_sample_idx_ls][train_start:train_end]
@@ -354,8 +359,10 @@ def evaluate_on_single_output(
 
     test_input = data_inputs[ls_of_ls_test_input[function_index]]
     test_start = 0
+
     for j in range(function_index):
-        test_start += len(ls_of_ls_test_input[i])
+        test_start += len(ls_of_ls_test_input[j])
+
     test_end = test_start + len(ls_of_ls_test_input[function_index])
     test_target = data_Y_squeezed[test_sample_idx_ls][test_start:test_end]
     test_predict = all_pred_mean[test_sample_idx_ls][test_start:test_end]
@@ -373,20 +380,20 @@ def evaluate_on_single_output(
 
 ################################################   Metrices  ################################################
 
-def neg_log_likelihood(Target:Tensor, GaussianMean:Tensor, GaussianVar:Tensor):
+def neg_log_likelihood(Target:torch.tensor, GaussianMean:torch.tensor, GaussianVar:torch.tensor):
     '''
     Evaluate negative log likelihood on given i.i.d. targets, where likelihood function is 
     gaussian with mean GaussianMean variance GaussianVar.
     Another name for this metric: negative log predictive density (NLPD). 
 
     Args:
-        Target (torch.Tensor): The target values.
-        GaussianMean (torch.Tensor): The mean values of the Gaussian distribution.
-        GaussianVar (torch.Tensor): The variance values of the Gaussian distribution.
+        Target (torch.torch.tensor): The target values.
+        GaussianMean (torch.torch.tensor): The mean values of the Gaussian distribution.
+        GaussianVar (torch.torch.tensor): The variance values of the Gaussian distribution.
 
         
     Return:
-        nll: (torch.Tensor): The scalar value of the negative log likelihood
+        nll: (torch.torch.tensor): The scalar value of the negative log likelihood
     '''
     assert Target.shape == GaussianMean.shape == GaussianVar.shape
 
@@ -397,14 +404,14 @@ def neg_log_likelihood(Target:Tensor, GaussianMean:Tensor, GaussianVar:Tensor):
     nll = 0.5 * torch.mean(torch.log(2 * torch.pi * GaussianVar) + (Target - GaussianMean)**2 / GaussianVar)
     return nll
 
-def root_mean_square_error(Target: Tensor, pred: Tensor):
+def root_mean_square_error(Target: torch.tensor, pred: torch.tensor):
     '''
     Evaluate rmse given target and predictions ... 
     '''
     assert Target.shape == pred.shape
     return (Target - pred).square().mean().sqrt()
 
-def normalised_mean_square_error(Target: Tensor, pred: Tensor):
+def normalised_mean_square_error(Target: torch.tensor, pred: torch.tensor):
     '''
     NMSE, follows definition given by Chunchao Ma
     '''
@@ -416,18 +423,32 @@ def normalised_mean_square_error(Target: Tensor, pred: Tensor):
 ################################################   Dimensionality reduction  ################################################
 from sklearn.decomposition import PCA
 
-def pca_reduction(originalTensor, n_components=2):
-    # originalTensor: of shape (# data, # features)
+'''
+def pca_reduction(originaltorch.tensor, n_components=2):
+    # originaltorch.tensor: of shape (# data, # features)
 
     pca = PCA(n_components=n_components)
-    reducedTensor = pca.fit_transform(originalTensor)
+    reducedtorch.tensor = pca.fit_transform(originaltorch.tensor)
 
-    # reducedTensor of shape (# data, n_components)
-    return Tensor(reducedTensor)
-
+    # reducedtorch.tensor of shape (# data, n_components)
+    return torch.tensor(reducedtorch.tensor)
+'''
 ################################################   Helper function:  plot ################################################
 
-def  plot_traindata_testdata_fittedgp(train_X: Tensor, train_Y: Tensor, test_X: Tensor, test_Y: Tensor, gp_X: Tensor, gp_pred_mean: Tensor, gp_pred_std: Tensor, inducing_points_X: Tensor, n_inducing_C:int=15, title=None, picture_save_path:str='', title_fontsize=20):
+def  plot_traindata_testdata_fittedgp(train_X: torch.tensor, 
+                                      train_Y: torch.tensor, 
+                                      test_X: torch.tensor, 
+                                      test_Y: torch.tensor, 
+                                      gp_X: torch.tensor, 
+                                      gp_pred_mean: torch.tensor, 
+                                      gp_pred_std: torch.tensor, 
+                                      inducing_points_X: torch.tensor, 
+                                      n_inducing_C:int=15, 
+                                      title=None, 
+                                      picture_save_path:str='', 
+                                      title_fontsize=20,
+                                      y_lower=None, 
+                                      y_upper=None):
     '''
     This is a 1 dim plot: train (corss) and test (dot) data, fitted gp all in the same figure.
     The shadowed area is mean +/- 1.96 gp_pred_std.
@@ -457,7 +478,7 @@ def  plot_traindata_testdata_fittedgp(train_X: Tensor, train_Y: Tensor, test_X: 
     plt.scatter(train_X_np, train_Y_np, c='r', marker='x', label='Training Data', s=110)
 
     # Plot test data as dots
-    plt.scatter(test_X_np, test_Y_np, c='k', marker='o', label='Test Data', alpha=0.5, s=100)
+    plt.scatter(test_X_np, test_Y_np, c='k', marker='o', label='Test Data', alpha=0.3, s=90)
 
     # Plot inducing points on x axis
     plt.scatter(inducing_points_X, [plt.gca().get_ylim()[0] - 1] * n_inducing_C, color='black', marker='^', label='Inducing Locations')
@@ -473,7 +494,7 @@ def  plot_traindata_testdata_fittedgp(train_X: Tensor, train_Y: Tensor, test_X: 
     n_layers = 2
     fill_between_layers(gp_X, gp_pred_mean_np, 2 * gp_pred_std_np / n_layers, 'blue', n_layers=n_layers)
     # plt.fill_between(gp_X, gp_pred_mean_np - 1.96 * gp_pred_std_np, gp_pred_mean_np + 1.96 * gp_pred_std_np, alpha=0.2, color='k')
-
+    plt.ylim(y_lower, y_upper)
     plt.legend()
     title_ = title if title != None else "Train/Test Data and Fitted GP"
     plt.title(title_, fontsize=title_fontsize, fontweight='bold')

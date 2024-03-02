@@ -7,10 +7,10 @@ min_input_bound: 0
 max_input_bound: 20 
 
 # model
-n_outputs: 22 
+n_outputs: 31 
 n_input: 309
-n_input_train: 154  # # of train inputs for every output 
-n_input_test: 155   #  # of test inputs for every output 
+n_input_train: 31  # # of train inputs for every output 
+n_input_test: 278   #  # of test inputs for every output 
 input_dim: 1
 latent_dim: 2
 n_inducing_input: 30
