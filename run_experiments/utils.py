@@ -2,6 +2,7 @@ import sys
 sys.path.append('/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/')
 from code_blocks.mlls.variational_elbo import VariationalELBO
 from code_blocks.mlls.sum_variational_elbo import SumVariationalELBO
+from code_blocks.utils.param_tracker import param_extractor1, ParamTracker
 from utils_general import (
     pred4all_outputs_inputs, 
     neg_log_likelihood, 
@@ -16,7 +17,6 @@ import matplotlib.pyplot as plt
 import time
 import random
 import numpy as np
-import copy
 from linear_operator.utils.errors import NotPSDError
 import gpytorch
 
@@ -108,13 +108,17 @@ def train_and_eval_lvmogp_model(
         
     # scheduler = CosineAnnealingLR(optimizer, T_max=20, eta_min=0.2*config['lr'])
 
-    loss_list = []
+    # Store the value of terms in the loss during training
+    loss_list, log_likelihood_term_list, latent_kl_term_list, variational_kl_term_list = [], [], [], []
+
+    param_tracker = ParamTracker(param_extractor=param_extractor1)
     iterator = trange(config['n_iterations'], leave=True)
 
     my_model.train()
     my_likelihood.train()
     start_time = time.time()
     min_loss_value = 1e+10
+
     for i in iterator: 
 
         batch_index_latent, batch_index_input = sample_ids_of_latent_and_input(ls_of_ls_train_input, 
@@ -123,7 +127,7 @@ def train_and_eval_lvmogp_model(
         optimizer.zero_grad()
         
         ### computing loss = negative variational elbo = - (log_likelihood - kl_divergence - added_loss)
-        loss = 0.0
+        loss, log_likelihood_term, latent_kl_term = 0.0, 0.0, 0.0
         for _ in range(config['num_latent_MC']):
             sample_batch_latent = my_model.sample_latent_variable(batch_idx=batch_index_latent, latent_info=latent_info)
             sample_batch_input = data_inputs[batch_index_input]
@@ -133,6 +137,7 @@ def train_and_eval_lvmogp_model(
             ## log-likelihood term
             log_likelihood_batch = my_likelihood.expected_log_prob(input=output_batch, target=data_Y_squeezed[batch_index_Y]).sum(-1).div(output_batch.event_shape[0])
             loss += -log_likelihood_batch
+            log_likelihood_term += -log_likelihood_batch.detach().item()
 
             ## x_kl term
             added_loss = torch.zeros_like(log_likelihood_batch)
@@ -140,10 +145,12 @@ def train_and_eval_lvmogp_model(
                 # ONLY one added loss here, which is KL in latent space
                 added_loss.add_(correction_term * config['alpha'] * added_loss_term.loss())
             loss += added_loss
+            latent_kl_term += added_loss.detach().item()
 
         ## KL divergence term
         kl_divergence = my_model.variational_strategy.kl_divergence().div(number_all_train_data / config['beta'])
         loss = loss / config['num_latent_MC'] + kl_divergence
+        variational_kl_term = kl_divergence.detach().item()
         loss.backward()
 
         loss_value = loss.item()
@@ -157,6 +164,10 @@ def train_and_eval_lvmogp_model(
             min_loss_value = loss_value
 
         loss_list.append(loss_value)
+        log_likelihood_term_list.append(log_likelihood_term / config['num_latent_MC'])
+        latent_kl_term_list.append(latent_kl_term / config['num_latent_MC'])
+        variational_kl_term_list.append(variational_kl_term)
+
         iterator.set_description('Loss: ' + str(float(np.round(loss_value, 3))) + ", iter no: " + str(i))
 
         # Clip gradients
@@ -166,17 +177,38 @@ def train_and_eval_lvmogp_model(
         optimizer.step()
         scheduler.step()
 
+        param_tracker.update(my_model, my_likelihood)
+
     end_time = time.time()
     total_training_time = end_time - start_time
 
     with open(results_txt, 'a') as file:
         file.write(f'Training time: {total_training_time:.2f}\n')
 
-    # plot training losses
-    _loss_list = list(np.array(loss_list)[np.array(loss_list) < 1000]) # remove too large losses, i.e. above 3
-    plt.plot(_loss_list)
-    plt.savefig(f'{results_folder_path}/filtered_training_loss.png')
+    ####### making some plots ... 
+    
+    # plot how (hyper) parameters change during training 
 
+    # plot the value of the components in the loss    
+    plt.plot(log_likelihood_term_list)
+    plt.savefig(f'{results_folder_path}/training_log_likelihood_term.png')
+    plt.close()
+
+    plt.plot(latent_kl_term_list)
+    plt.savefig(f'{results_folder_path}/training_latent_kl_term_list.png')
+    plt.close()
+
+    plt.plot(variational_kl_term_list)
+    plt.savefig(f'{results_folder_path}/training_variational_kl_term_list.png')
+    plt.close()
+
+    # plot training losses
+    plt.plot(loss_list)
+    plt.savefig(f'{results_folder_path}/training_loss.png')
+    plt.close()
+
+    param_tracker.plot(results_folder_path)
+    
     # save model
     torch.save(my_model.state_dict(), f'{results_folder_path}/model.pth')
     torch.save(my_likelihood.state_dict(), f'{results_folder_path}/likelihood.pth') 
@@ -701,3 +733,21 @@ def helper_init_model_and_likeli(my_model, config, my_likelihood=None, only_init
         my_likelihood.noise = config['init_likelihood_noise']
 
     return my_model, my_likelihood
+
+def helper_plot_model_and_likelihood_parameters_change(my_model, my_likelihood, config):
+    '''
+    helper function used in training lvmogp model. Record how parameter changed during training.
+    '''
+    # Kernel on input space
+
+    if config['input_kernel_type'] == 'Scale_RBF':
+        None
+
+
+    # Kernel on latent space
+
+
+
+    # Likelihood
+     
+    return None

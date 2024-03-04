@@ -110,6 +110,7 @@ def prepare_exchange_data(config):
         though some of the elements are missing for USD/XAG (8), USD/XAU (9), USD/XPT (42).
         We are interested in making predict on (artificially masked targets) of 3 time series: USD/CAD (#test = 51), USD/JPY (#test = 101), and USD/AUD (#test = 151).
     '''
+    columns_as_targets = ['USD/CHF', 'USD/EUR', 'USD/GBP', 'USD/HKD', 'USD/KRW', 'USD/MXN', 'USD/NZD', 'USD/XAG', 'USD/XAU', 'USD/XPT', 'USD/CAD', 'USD/JPY', 'USD/AUD']
 
     rates_df = pd.read_csv(config['exchange_rate_path'])
     train_df = pd.read_csv(config['exchange_train_path'])
@@ -121,7 +122,7 @@ def prepare_exchange_data(config):
     # original inputs 
     data_inputs = torch.tensor(rates_df['year']) 
 
-    # apply proper transformation (make inputs evenly spaced)
+    # NOTE: apply proper transformation (make inputs evenly spaced)
 
     # translate_bias = config['min_input_bound']
     # translate_scale = (config['max_input_bound'] - config['min_input_bound']) / config['n_input']
@@ -160,14 +161,71 @@ def prepare_exchange_data(config):
         train_sample_idx_ls = np.concatenate((train_sample_idx_ls, list(np.array(ls_of_ls_train_input[i]) + config['n_input']*i)))
         test_sample_idx_ls = np.concatenate((test_sample_idx_ls, list(np.array(ls_of_ls_test_input[i]) + config['n_input']*i)))
 
+    # make sure no test data statistics are leaked
+    assert set(train_df.iloc[:, 1:].columns.to_list()) == set(columns_as_targets)   
     means, stds = torch.tensor(train_df.iloc[:, 1:].mean().to_numpy()), torch.tensor(train_df.iloc[:, 1:].std().to_numpy())
+    normalized_rates_df = (rates_df - train_df.mean()) / train_df.std()
 
-    normalized_rates_df = (rates_df - rates_df.mean()) / rates_df.std()
     data_Y_squeezed = torch.tensor(normalized_rates_df.iloc[:, 1:].to_numpy().T).reshape(-1)
 
     # make sure the train and test datasets contain NO nan value
     assert torch.isnan(data_Y_squeezed[train_sample_idx_ls]).any() == False
     assert torch.isnan(data_Y_squeezed[test_sample_idx_ls]).any() == False
+
+    return data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, train_sample_idx_ls, test_sample_idx_ls, means, stds
+
+
+def prepare_egg_data(config):
+    '''
+    EGG dataset from OILMM paper.
+        The egg_data dataset has 8 columns (column names: time, F1, F2, F3, F4, F5, F6, FZ) and 256 rows, no missing data.
+        'time' column serves as the inputs, other columns serve as target time series.
+        The last 100 rows of F1, F2, FZ are masked during training, they serve as test data.
+    '''
+    columns_as_targets = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'FZ']
+
+    egg_data = pd.read_csv(config['egg_data_all_path'])
+    egg_train_data = pd.read_csv(config['egg_data_train_path'])
+
+    assert egg_data.shape[0] == config['n_input']
+    assert egg_data.shape[1] == config['n_outputs'] + 1
+
+    # original inputs 
+    data_inputs = torch.tensor(egg_data['time']) 
+
+    # TODO: apply proper transformation (possibly make inputs evenly spaced)
+
+    ls_of_ls_train_input = []
+    ls_of_ls_test_input = []
+
+    input_full_list = [i for i in range(config['n_input'])]
+
+    for col_name in egg_data.columns:
+        if col_name != 'time' and ( col_name == 'F1' or col_name == 'F2' or col_name == 'FZ' ):
+            ls_of_ls_train_input.append(input_full_list[:-100])
+            ls_of_ls_test_input.append(input_full_list[-100:])
+        elif col_name != 'time':
+            ls_of_ls_train_input.append(input_full_list)
+            ls_of_ls_test_input.append([])
+
+    assert len(ls_of_ls_train_input) == 7 == len(ls_of_ls_test_input)    
+
+    train_sample_idx_ls, test_sample_idx_ls = [], []
+    for i in range(config['n_outputs']):
+        train_sample_idx_ls = np.concatenate((train_sample_idx_ls, list(np.array(ls_of_ls_train_input[i]) + config['n_input']*i)))
+        test_sample_idx_ls = np.concatenate((test_sample_idx_ls, list(np.array(ls_of_ls_test_input[i]) + config['n_input']*i)))  
+
+    # make sure no test data statistics are leaked
+    means, stds = torch.tensor(egg_train_data[columns_as_targets].mean().to_numpy()), torch.tensor(egg_train_data[columns_as_targets].std().to_numpy())  
+    normalized_egg_data = (egg_data - egg_train_data.mean()) / egg_train_data.std()
+
+    data_Y_squeezed = torch.tensor(normalized_egg_data[columns_as_targets].to_numpy().T).reshape(-1)
+
+    # make sure the train and test datasets contain NO nan value
+    assert torch.isnan(data_Y_squeezed[train_sample_idx_ls]).any() == False
+    assert torch.isnan(data_Y_squeezed[test_sample_idx_ls]).any() == False
+
+    assert data_Y_squeezed[train_sample_idx_ls].shape[0] == config['number_all_train_data']
 
     return data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, train_sample_idx_ls, test_sample_idx_ls, means, stds
 

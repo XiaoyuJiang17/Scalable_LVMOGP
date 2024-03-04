@@ -61,6 +61,9 @@ if __name__ == "__main__":
     elif config['dataset_type'] == 'exchange':
         data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, train_sample_idx_ls, test_sample_idx_ls, means, stds = prepare_exchange_data(config)
 
+    elif config['dataset_type'] == 'egg':
+        data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, train_sample_idx_ls, test_sample_idx_ls, means, stds = prepare_egg_data(config)
+
     elif config['dataset_type'] == 'spatio_temporal_data':
         data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, lon_lat_tensor, train_sample_idx_ls, test_sample_idx_ls, means, stds = prepare_spatio_temp_data(config)
     
@@ -84,12 +87,7 @@ if __name__ == "__main__":
                 data_Y = data_Y_squeezed.reshape(config['n_outputs'], config['n_input'])
                 data_Y[:, config['n_input_train']:] = torch.nan
 
-            elif config['dataset_type'] == 'synthetic_regression' or config['dataset_type'] == 'mocap':
-                data_Y_squeezed_copy = data_Y_squeezed.clone()
-                data_Y_squeezed_copy[test_sample_idx_ls] = torch.nan
-                data_Y = data_Y_squeezed_copy.reshape(config['n_outputs'], config['n_input'])
-
-            elif config['dataset_type'] == 'exchange':
+            elif config['dataset_type'] in ['synthetic_regression', 'mocap', 'exchange', 'egg']:
                 data_Y_squeezed_copy = data_Y_squeezed.clone()
                 data_Y_squeezed_copy[test_sample_idx_ls] = torch.nan
                 data_Y = data_Y_squeezed_copy.reshape(config['n_outputs'], config['n_input'])
@@ -135,7 +133,7 @@ if __name__ == "__main__":
     try: 
         my_model = helper_init_latent_kernel(my_model, gplvm_model)
 
-    except NameError: # gplvm_model is defined ...
+    except NameError: # gplvm_model is not defined ...
         pass
 
     # Kernels hypers for inputs, and likelihood

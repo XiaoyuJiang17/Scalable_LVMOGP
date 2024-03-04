@@ -60,7 +60,7 @@ if __name__ == "__main__":
     
     MultiIGP = Multi_Variational_IGP(
         num_models = config['n_outputs'], 
-        inducing_points = Tensor(np.linspace(config['init_inducing_input_LB'], config['init_inducing_input_UB'], config['n_inducing_input']).reshape(-1, 1)), 
+        inducing_points = torch.tensor(np.linspace(config['init_inducing_input_LB'], config['init_inducing_input_UB'], config['n_inducing_input']).reshape(-1, 1)), 
         init_likelihood_noise = config['init_likelihood_noise'], 
         kernel_type = config['input_kernel_type'], 
         learn_inducing_locations= config['learn_inducing_locations_input'],

@@ -58,11 +58,15 @@ def prepare_common_background_info(my_model, config):
     # K_uu_input_inv = torch.linalg.solve(K_uu_input, torch.eye(K_uu_input.size(-1))
 
     K_uu = KroneckerProductLinearOperator(K_uu_latent, K_uu_input) #.to_dense().data
-    # chol_K_uu_inv_t = _cholesky_factor_latent(KroneckerProductLinearOperator(K_uu_latent_inv, K_uu_input_inv)).to_dense().data.t()
-    chol_K_uu_inv_t = KroneckerProductLinearOperator(
-            torch.linalg.solve( _cholesky_factor(K_uu_latent).to_dense().data, torch.eye(K_uu_latent.size(-1))),
-            torch.linalg.solve( _cholesky_factor(K_uu_input).to_dense().data, torch.eye(K_uu_input.size(-1))),
-        )._transpose_nonbatch() # .to_dense().data.t()
+
+    # Way 1: first kronecker product, then cholesky, finally inverse (inverse the large matrix)
+    chol_K_uu_inv_t = TriangularLinearOperator(torch.linalg.solve(_cholesky_factor(K_uu).to_dense().data, torch.eye(K_uu.size(-1))))._transpose_nonbatch()
+
+    # Way 2: first inverse, then kronecker product (only inverse small matrices, but emperically large numerical error)
+    #chol_K_uu_inv_t_old = KroneckerProductLinearOperator(
+    #        torch.linalg.solve( _cholesky_factor(K_uu_latent).to_dense().data, torch.eye(K_uu_latent.size(-1))),
+    #        torch.linalg.solve( _cholesky_factor(K_uu_input).to_dense().data, torch.eye(K_uu_input.size(-1))),
+    #    )._transpose_nonbatch() # .to_dense().data.t()
     # ------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
     chol_covar_latent_u = my_model.variational_strategy._variational_distribution.chol_variational_covar_latent.data
@@ -75,18 +79,20 @@ def prepare_common_background_info(my_model, config):
     # ------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
     common_background_information = {
+                        'K_uu_input': K_uu_input,
+                        'K_uu_latent': K_uu_latent,
                         'K_uu': K_uu,
-                        'chol_K_uu_inv_t': chol_K_uu_inv_t, 
+                        'chol_K_uu_inv_t': chol_K_uu_inv_t,
                         'm_u': my_model.variational_strategy._variational_distribution.variational_mean.data,
                         'Sigma_u': covar_u,
                         'A': chol_K_uu_inv_t @ (covar_u - torch.eye(covar_u.shape[0])) @ chol_K_uu_inv_t._transpose_nonbatch(),
-                        'var_H': my_model.covar_module_latent.outputscale.data, # based on the use of RBF kernel
+                        'var_H': my_model.covar_module_latent.outputscale.data.item(), # based on the use of RBF kernel
                         'var_X': my_model.covar_module_input(torch.tensor([0.])).to_dense().item(), # This implementation works for any kind of kernel.
                         #'var_X': my_model.covar_module_input.outputscale.data,  # 
                         'W': my_model.covar_module_latent.base_kernel.lengthscale.data.reshape(-1)**2
                         }
     '''
-    chol_K_uu_inv_t: inverse of K_uu matrix, of shape (M_H * M_X, M_H * M_X)
+    chol_K_uu_inv_t: inverse of cholesky of K_uu matrix, of shape (M_H * M_X, M_H * M_X); L^{-T} where LL^T = K_uu
     m_u: mean of the variational distribution
     Sigma_u: covariance matrix of the variational distribution
     A: chol_K_uu_inv_t (Sigma_u - K_uu) chol_K_uu_inv_t.T NOTE: whitening ... 
@@ -106,6 +112,9 @@ def prepare_pre_computation(my_model,
     '''note for each input x*, we compute a corresponding K_u_f_K_f_u, use this function only once to save computation'''
     input_K_f_u = my_model.covar_module_input(test_input, my_model.variational_strategy.inducing_points_input.data).to_dense().data
     input_K_u_fi_K_fi_u_list = [torch.outer(input_K_f_u[i, :], input_K_f_u[i, :]) for i in range(test_input.shape[0])]
+
+    for input_K_u_fi_K_fi_u in input_K_u_fi_K_fi_u_list:
+        assert torch.all(input_K_u_fi_K_fi_u >= 0.)
     
     pre_compute_dict = {}
     pre_compute_dict['input_K_f_u'] = input_K_f_u
@@ -184,14 +193,15 @@ def integration_prediction_func(test_input,     # tensor
 
         for i in range(test_input.shape[0]):
             interm_term = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_u_f_K_f_u'], pre_compute_dict['input_K_u_fi_K_fi_u_list'][i])
+            assert torch.all(interm_term.to_dense() >= 0.)
             result_ = _result @ interm_term @ _result.t()
             final_result[i] = result_.item()
             # Store these result for next time use ... 
             if i not in data_specific_background_information['expectation_K_uu_dict']:
                 data_specific_background_information['expectation_K_uu_dict'][i] = interm_term
 
-        assert torch.all(final_result > 0.)
-        return final_result
+        assert torch.all(final_result >= 0.)
+        return final_result    
         
     def expectation_gamma(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information):
 
@@ -204,12 +214,11 @@ def integration_prediction_func(test_input,     # tensor
                 data_specific_background_information['expectation_K_uu_dict'][i] = KroneckerProductLinearOperator(data_specific_background_information['expectation_latent_K_u_f_K_f_u'], \
                                                                                                         pre_compute_dict['input_K_u_fi_K_fi_u_list'][i])
 
-            assert torch.all(data_specific_background_information['expectation_K_uu_dict'][i].to_dense()) > 0. 
+            assert torch.all(data_specific_background_information['expectation_K_uu_dict'][i].to_dense() >= 0.) 
             final_result[i] = (result_ + (common_background_information['A'].to_dense() * data_specific_background_information['expectation_K_uu_dict'][i].to_dense()).sum()).item()
-
-        assert torch.all(final_result > 0.)
+        assert torch.all(final_result >= 0.)
         return final_result
-    
+
     def integration_predictive_mean(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information):
         return expectation_lambda(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information)
 
@@ -221,7 +230,8 @@ def integration_prediction_func(test_input,     # tensor
         term3 = expectation_lambda(common_background_information=common_background_information, data_specific_background_information=data_specific_background_information).pow(2)
         # TODO: something goes wrong from scalar prediction to vector prediction ... 
         result = ( term1 + term2 - term3 )
-        assert torch.all(result > 0.)
+        
+        assert torch.all(result >= 0.)
         return result
     
     # ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -230,6 +240,8 @@ def integration_prediction_func(test_input,     # tensor
     expectation_latent_K_u_f_K_f_u = torch.tensor([R(my_model.variational_strategy.inducing_points_latent.data[i], my_model.variational_strategy.inducing_points_latent.data[j]).item() \
                                             for j in range(config['n_inducing_latent']) for i in range(config['n_inducing_latent'])]).reshape(config['n_inducing_latent'], config['n_inducing_latent'])
 
+    assert torch.all( expectation_latent_K_f_u >= 0. )
+    assert torch.all( expectation_latent_K_u_f_K_f_u >= 0. )
     data_specific_background_information['expectation_latent_K_f_u'] = expectation_latent_K_f_u
     data_specific_background_information['expectation_latent_K_u_f_K_f_u'] = expectation_latent_K_u_f_K_f_u
 
@@ -406,7 +418,7 @@ def neg_log_likelihood(Target:torch.tensor, GaussianMean:torch.tensor, GaussianV
 
 def root_mean_square_error(Target: torch.tensor, pred: torch.tensor):
     '''
-    Evaluate rmse given target and predictions ... 
+    Evaluate rmse given target and mean of predictions ... 
     '''
     assert Target.shape == pred.shape
     return (Target - pred).square().mean().sqrt()
