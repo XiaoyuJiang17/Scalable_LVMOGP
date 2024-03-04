@@ -2,7 +2,7 @@ import sys
 sys.path.append('/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/')
 from code_blocks.mlls.variational_elbo import VariationalELBO
 from code_blocks.mlls.sum_variational_elbo import SumVariationalELBO
-from code_blocks.utils.param_tracker import param_extractor1, ParamTracker
+from code_blocks.utils.param_tracker import param_extractor1, ParamTracker, SimpleTracker
 from utils_general import (
     pred4all_outputs_inputs, 
     neg_log_likelihood, 
@@ -89,6 +89,25 @@ def train_and_eval_lvmogp_model(
         file.write(f'Random seed: {args.random_seed}\n')
 
     ''' -------------------------------------- Training --------------------------------------'''
+    # playground
+    '''
+    normal_parameters, delay_parameters = [], []
+    for name, param in my_model.named_parameters():
+        if 'chol_variational_covar_' in name:
+            delay_parameters.append({'params': param})
+        else:
+            normal_parameters.append({'params': param})
+
+    delay_parameters.append({'params': my_likelihood.parameters()})
+
+    optimizer = torch.optim.Adam(
+        normal_parameters,
+        lr=config['lr'])
+    
+    delay_optimizer = torch.optim.Adam(
+        delay_parameters,
+        lr=0.0
+    )'''
 
     # optimizer and scheduler
     optimizer = torch.optim.Adam([
@@ -108,9 +127,7 @@ def train_and_eval_lvmogp_model(
         
     # scheduler = CosineAnnealingLR(optimizer, T_max=20, eta_min=0.2*config['lr'])
 
-    # Store the value of terms in the loss during training
-    loss_list, log_likelihood_term_list, latent_kl_term_list, variational_kl_term_list = [], [], [], []
-
+    loss_terms_tracker = SimpleTracker()
     param_tracker = ParamTracker(param_extractor=param_extractor1)
     iterator = trange(config['n_iterations'], leave=True)
 
@@ -163,10 +180,11 @@ def train_and_eval_lvmogp_model(
 
             min_loss_value = loss_value
 
-        loss_list.append(loss_value)
-        log_likelihood_term_list.append(log_likelihood_term / config['num_latent_MC'])
-        latent_kl_term_list.append(latent_kl_term / config['num_latent_MC'])
-        variational_kl_term_list.append(variational_kl_term)
+        loss_terms_dict = {'loss_value': loss_value, 
+                           'log_likelihood_term': log_likelihood_term / config['num_latent_MC'], 
+                           'latent_kl_term': latent_kl_term / config['num_latent_MC'], 
+                           'variational_kl_term': variational_kl_term}
+        loss_terms_tracker.update(loss_terms_dict)
 
         iterator.set_description('Loss: ' + str(float(np.round(loss_value, 3))) + ", iter no: " + str(i))
 
@@ -174,8 +192,13 @@ def train_and_eval_lvmogp_model(
         torch.nn.utils.clip_grad_norm_(my_model.parameters(), config['model_max_grad_norm'])
         torch.nn.utils.clip_grad_norm_(my_likelihood.parameters(), config['likeli_max_grad_norm'])
 
+        # for normal parameters
         optimizer.step()
         scheduler.step()
+
+        # for delay parameters
+        # delay_optimizer.step()
+        # adjust_lr(delay_optimizer, iter=i, warm_up_period1=1000, warm_up_period2=1000, final_lr=config['lr'])
 
         param_tracker.update(my_model, my_likelihood)
 
@@ -187,28 +210,9 @@ def train_and_eval_lvmogp_model(
 
     ####### making some plots ... 
     
-    # plot how (hyper) parameters change during training 
-
-    # plot the value of the components in the loss    
-    plt.plot(log_likelihood_term_list)
-    plt.savefig(f'{results_folder_path}/training_log_likelihood_term.png')
-    plt.close()
-
-    plt.plot(latent_kl_term_list)
-    plt.savefig(f'{results_folder_path}/training_latent_kl_term_list.png')
-    plt.close()
-
-    plt.plot(variational_kl_term_list)
-    plt.savefig(f'{results_folder_path}/training_variational_kl_term_list.png')
-    plt.close()
-
-    # plot training losses
-    plt.plot(loss_list)
-    plt.savefig(f'{results_folder_path}/training_loss.png')
-    plt.close()
-
+    loss_terms_tracker.plot(results_folder_path)
     param_tracker.plot(results_folder_path)
-    
+
     # save model
     torch.save(my_model.state_dict(), f'{results_folder_path}/model.pth')
     torch.save(my_likelihood.state_dict(), f'{results_folder_path}/likelihood.pth') 
@@ -624,6 +628,8 @@ def train_and_eval_multiIndepSVGP_model(
         train_nll_sum += train_nll_ * len(list_train_Y[j])
         test_nll_sum  += test_nll_ *  len(list_test_Y[j])
 
+        train_error_length += len(list_train_Y[j])
+        test_error_length += len(list_test_Y[j])
         ''' ------------ ------------ ------------ ------------ ------------ ------------ ------------'''
         if means != None:
         # On original data (before being transformed based on statistics from train split)
@@ -658,8 +664,7 @@ def train_and_eval_multiIndepSVGP_model(
             original_test_nll_sum  += original_test_nll_ *  len(list_test_Y[j])
 
         ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 
-        train_error_length += len(list_train_Y[j])
-        test_error_length += len(list_test_Y[j])
+        
 
     # ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- -----
     train_pred_mean_cat, test_pred_mean_cat = torch.cat(train_list_pred_mean_tensors, dim=0), torch.cat(test_list_pred_mean_tensors, dim=0)
@@ -734,20 +739,22 @@ def helper_init_model_and_likeli(my_model, config, my_likelihood=None, only_init
 
     return my_model, my_likelihood
 
-def helper_plot_model_and_likelihood_parameters_change(my_model, my_likelihood, config):
+def adjust_lr(optimizer, iter, warm_up_period1=1000, warm_up_period2=1000, final_lr=0.01):
     '''
-    helper function used in training lvmogp model. Record how parameter changed during training.
+    for some parameters, we initialize set zero learning rate (no updating), after warm_up_period1, we gradually increase their learning rates, until reach the normal learning rate.
+    The increasing period length (how fast we increase learning rates) depends on warm_up_period2.
     '''
-    # Kernel on input space
+    if iter < warm_up_period1:
+        # do nothing, zero learning rates
+        pass
 
-    if config['input_kernel_type'] == 'Scale_RBF':
-        None
-
-
-    # Kernel on latent space
-
-
-
-    # Likelihood
-     
-    return None
+    elif iter >= warm_up_period1 and iter < (warm_up_period1 + warm_up_period2):
+        # gradually increase learning rates
+        curr_lr = final_lr * (iter - warm_up_period1) / warm_up_period2
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = curr_lr
+    
+    elif iter >= (warm_up_period1 + warm_up_period2):
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = final_lr
+    

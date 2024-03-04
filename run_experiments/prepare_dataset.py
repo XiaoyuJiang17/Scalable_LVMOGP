@@ -55,9 +55,10 @@ def prepare_synthetic_regression_data(config):
 def prepare_mocap_data(config):
     '''
     Prepare data for MOCAP dataset.
+        for each output, we randomly mask a group of inputs (possibly different) during training (used for test).
     '''
     # NOTE: first column used as index ... 
-    data_Y = torch.tensor(pd.read_csv(config['data_Y_squeezed_path'], index_col=0).to_numpy())
+    data_Y = torch.tensor(pd.read_csv(config['data_Y_path'], index_col=0).to_numpy())
     n_outputs, n_input = data_Y.shape[0], data_Y.shape[-1]
     assert n_outputs == config['n_outputs']
     assert n_input == config['n_input']
@@ -100,6 +101,18 @@ def prepare_mocap_data(config):
     assert data_Y_squeezed.shape[0] == (config['n_input'] * config['n_outputs'])
     
     return data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, train_sample_idx_ls, test_sample_idx_ls, means, stds
+
+
+def prepare_sliced_mocap_data(config):
+    '''
+    Prepare MOCAP dataset.
+        Pick some outputs, mask a continuous part for each of them during training (used for test).
+        Some of outputs are entirely used for training (no test points).
+    '''
+    
+    return None
+
+
 
 
 def prepare_exchange_data(config):
