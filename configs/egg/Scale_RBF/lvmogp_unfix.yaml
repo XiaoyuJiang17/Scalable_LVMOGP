@@ -1,30 +1,29 @@
 # data
-dataset_type: 'exchange'
-exchange_rate_path: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/exchange/exchange_rates.csv'
-exchange_train_path: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/exchange/exchange_train.csv'
-exchange_test_path: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/exchange/exchange_test.csv'
+dataset_type: 'egg'
+egg_data_all_path: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/egg_datasets/egg_all.csv'
+egg_data_train_path: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/egg_datasets/egg_train.csv'
 
 # model
-gplvm_init: True
-n_outputs: 13
-n_input: 251
-number_all_train_data: 2901 # NOTE this does not mean 13*251 - 2901 are all for test
-n_input_train: 251   #  # of train inputs for every output  
+gplvm_init: False
+n_outputs: 7
+n_input: 256
+number_all_train_data: 1492 # 7*256 - 300
+n_input_train: 256
 input_dim: 1
-latent_dim: 2
-trainable_latent_dim: 2
+latent_dim: 3
+trainable_latent_dim: 3
 NNEncoder: False
 # (1) trainable_latent_dim = None: only 1 part, all trainable ; (but initialization need to be re-implement)
 # (2) trainable_latent_dim = 0: only 1 part, all fixed ;  
 # (3) 0 < trainable_latent_dim < latent_dim: 2 parts ; 
 # (4) trainable_latent_dim = latent_dim: only 1 part, all trainable ; (together with random initialization)
-n_inducing_input: 20
+n_inducing_input: 30
 n_inducing_latent: 30
 batch_size_latent: 10
 batch_size_input:  50
 pca: False
 learn_inducing_locations_latent: True
-learn_inducing_locations_input: True
+learn_inducing_locations_input: False
 latent_kernel_type: 'Scale_RBF'
 input_kernel_type: Scale_RBF 
 beta: 1.
@@ -32,12 +31,11 @@ alpha: 1.
 
 # model initialization
 # kernels using default initialization ... 
-init_inducing_input_LB: 2007
-init_inducing_input_UB: 2008
-lengthscale_init: 0.1
-outputscale_init: 1.
+init_inducing_input_LB: 0.
+init_inducing_input_UB: 1.
+lengthscale_init: 0.01
+outputscale_init: 0.5
 init_likelihood_noise: 0.01
-
 
 # optimizer
 lr: 0.01 # 0.01
@@ -45,6 +43,6 @@ step_size_up: 30
 
 # training
 n_iterations: 10000
-num_latent_MC: 5
+num_latent_MC: 3
 model_max_grad_norm: 0.1
 likeli_max_grad_norm: 0.01

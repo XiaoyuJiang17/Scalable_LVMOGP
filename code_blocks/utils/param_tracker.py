@@ -43,7 +43,40 @@ class ParamTracker:
                 plt.savefig(f"{folder_path}/model_{i}_key_{key}.png") 
                 plt.close()  
 
+
+class SimpleTracker:
+    '''
+    track several variables during training. For instance, track how different components of loss changes at training time.
+    '''
+    def __init__(self):
+
+        self.values_history_dict = {} # dict of list
+        self.initialized = False
+    
+    def update(self, dict):
+
+        # dict stores variable names and values
+        if self.initialized == False:
+            for key in dict:
+                self.values_history_dict[f'{key}'] = []
+
+            self.initialized = True
         
+        for key in dict:
+            self.values_history_dict[key].append(dict[key])
+
+    def plot(self, folder_path):
+
+        for key, values in self.values_history_dict.items():
+            plt.figure()
+            plt.plot(values)
+            plt.title(f"Plot of value {key}")
+            plt.xlabel("Index")
+            plt.ylabel("Value")
+            plt.savefig(f"{folder_path}/value_key_{key}.png") 
+            plt.close()  
+
+
 def param_extractor1(model):
     '''
     Used for lvmogp model with Scale_RBF kernel on both latent and input space. Likelihood is Gaussian.

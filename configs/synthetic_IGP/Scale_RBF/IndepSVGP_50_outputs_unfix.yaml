@@ -29,6 +29,6 @@ lr: 0.01 # 0.01
 step_size_up: 30
 
 # training
-n_iterations: 10000
+n_iterations: 5000
 model_max_grad_norm: 1
 likeli_max_grad_norm: 0.1

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-for seed in 1 2;
+for seed in 3 4;
 do  
     ## OurModel
 

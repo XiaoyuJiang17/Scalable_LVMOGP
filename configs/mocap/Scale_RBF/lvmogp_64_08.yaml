@@ -1,6 +1,6 @@
 # data
 dataset_type: mocap
-data_Y_path: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/CMU_motion_capture/csv_files/08_02amc.csv'
+data_Y_path: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/CMU_motion_capture/csv_files/64_08amc.csv'
 
 # input
 min_input_bound: 0 
@@ -8,13 +8,13 @@ max_input_bound: 20
 
 # model
 gplvm_init: True
-n_outputs: 31
-n_input: 309
-n_input_train: 31  #  # of train inputs for every output  
-n_input_test: 278   #  # of test inputs for every output  
+n_outputs: 56
+n_input: 364
+n_input_train: 18  #  # of train inputs for every output  
+n_input_test: 346   #  # of test inputs for every output  
 input_dim: 1
-latent_dim: 3
-trainable_latent_dim: 3
+latent_dim: 2
+trainable_latent_dim: 2
 NNEncoder: False
 # (1) trainable_latent_dim = None: only 1 part, all trainable ; (but initialization need to be re-implement)
 # (2) trainable_latent_dim = 0: only 1 part, all fixed ;  

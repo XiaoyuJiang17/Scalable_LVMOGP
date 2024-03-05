@@ -304,8 +304,7 @@ def train_and_eval_lvmogp_model(
 ################################################   Train and Evaluate Multi-IndepSVGP Model  ################################################
 
 def mini_batching_sampling_func(num_inputs, batch_size):
-    assert batch_size <= num_inputs
-    idx_list = random.sample(range(num_inputs), batch_size)
+    idx_list = random.choices(range(num_inputs), k=batch_size)
     return idx_list
 
 # helper function to store list of indepSVGP models and list of their likelihoods.
@@ -315,6 +314,17 @@ def save_model_and_likelihoods(multi_variational_igp, filename):
         'likelihoods': [likelihood.state_dict() for likelihood in multi_variational_igp.likelihoods]
     }
     torch.save(state_dicts, filename)
+
+def load_model_and_likelihoods(multi_variational_igp, filename):
+    state_dicts = torch.load(filename)
+
+    for model, state_dict in zip(multi_variational_igp.models, state_dicts['models']):
+        model.load_state_dict(state_dict)
+    
+    for likelihood, state_dict in zip(multi_variational_igp.likelihoods, state_dicts['likelihoods']):
+        likelihood.load_state_dict(state_dict)
+    
+    return multi_variational_igp
 
 def train_and_eval_multiIndepSVGP_parallel(
         data_inputs,
@@ -581,111 +591,29 @@ def train_and_eval_multiIndepSVGP_model(
     total_time = np.array(ls_training_time).sum()
     with open(results_txt, 'a') as file:
         file.write(f'Total time: {total_time}\n')
-
+    
     save_model_and_likelihoods(my_model, f'{results_folder_path}/MultiIGPs_models_and_likelihoods.pth')
 
     '''########  Testing  ########'''
+    
+    norm_results_dict, origin_results_dict = helper_eval_multiIndepSVGP_model(
+                                                    multi_IndepSVGP=my_model,
+                                                    data=[list_train_X, list_test_X, list_train_Y, list_test_Y],
+                                                    means=means,
+                                                    stds=stds,
+                                                    config=config)
 
-    train_error_square_sum, test_error_square_sum, train_nll_sum, test_nll_sum, train_error_length, test_error_length = 0., 0., 0., 0., 0., 0.
-    original_train_error_square_sum, original_test_error_square_sum, original_train_nll_sum, original_test_nll_sum = 0., 0., 0., 0.
-    train_list_pred_mean_tensors,  test_list_pred_mean_tensors = [], []
-
-    for j in range(config['n_outputs']):
-
-        curr_model = my_model.get_model(j)
-        curr_likelihood = my_model.get_likelihood(j)
-
-        curr_model.eval()
-        curr_likelihood.eval()
-
-        # Inference for train and test data
-        curr_train_output_dist = curr_likelihood(curr_model(list_train_X[j]))
-        curr_test_output_dist  = curr_likelihood(curr_model(list_test_X[j]))
-        curr_train_pred_mean = curr_train_output_dist.loc.detach()
-        curr_test_pred_mean = curr_test_output_dist.loc.detach()
-
-        # RMSE on normalized data
-        curr_train_suqare_errors = (curr_train_pred_mean - list_train_Y[j]).square()
-        curr_test_square_errors = (curr_test_pred_mean - list_test_Y[j]).square()
-        train_error_square_sum += curr_train_suqare_errors.sum()
-        test_error_square_sum  += curr_test_square_errors.sum()
-
-        # prepare for NMSE on normalized data
-
-        train_list_pred_mean_tensors.append(curr_train_pred_mean)
-        test_list_pred_mean_tensors.append(curr_test_pred_mean)
-
-        # NLL on normalized data
-
-        train_nll_ = neg_log_likelihood(list_train_Y[j], 
-                                        curr_train_output_dist.loc.detach(), 
-                                        curr_train_output_dist.variance.detach())
-        
-        test_nll_ = neg_log_likelihood(list_test_Y[j], 
-                                       curr_test_output_dist.loc.detach(), 
-                                       curr_test_output_dist.variance.detach())
-        
-        train_nll_sum += train_nll_ * len(list_train_Y[j])
-        test_nll_sum  += test_nll_ *  len(list_test_Y[j])
-
-        train_error_length += len(list_train_Y[j])
-        test_error_length += len(list_test_Y[j])
-        ''' ------------ ------------ ------------ ------------ ------------ ------------ ------------'''
-        if means != None:
-        # On original data (before being transformed based on statistics from train split)
-            original_train_Y_j = (list_train_Y[j] * stds[j].item() )+ means[j].item()
-            original_test_Y_j = (list_test_Y[j] * stds[j].item() )+ means[j].item()
-
-            original_curr_train_pred_loc = curr_train_output_dist.loc.detach() * stds[j].item() + means[j].item()
-            original_curr_test_pred_loc = curr_test_output_dist.loc.detach() * stds[j].item() + means[j].item()
-            original_curr_train_pred_var = curr_train_output_dist.variance.detach() * (stds[j].item()**2)
-            original_curr_test_pred_var = curr_test_output_dist.variance.detach() * (stds[j].item()**2)
-
-            # RMSE on original data
-
-            original_curr_train_suqare_errors = (original_curr_train_pred_loc - original_train_Y_j).square()
-            original_curr_test_square_errors = (original_curr_test_pred_loc - original_test_Y_j).square()
-            original_train_error_square_sum += original_curr_train_suqare_errors.sum()
-            original_test_error_square_sum  += original_curr_test_square_errors.sum()
-
-            # No NMSE on original data, looks strange!
-
-            # NLL on original data
-
-            original_train_nll_ = neg_log_likelihood(original_train_Y_j, 
-                                            original_curr_train_pred_loc, 
-                                            original_curr_train_pred_var)
-            
-            original_test_nll_ = neg_log_likelihood(original_test_Y_j, 
-                                        original_curr_test_pred_loc, 
-                                        original_curr_test_pred_var)
-            
-            original_train_nll_sum += original_train_nll_ * len(list_train_Y[j])
-            original_test_nll_sum  += original_test_nll_ *  len(list_test_Y[j])
-
-        ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 
-        
-
-    # ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- -----
-    train_pred_mean_cat, test_pred_mean_cat = torch.cat(train_list_pred_mean_tensors, dim=0), torch.cat(test_list_pred_mean_tensors, dim=0)
-    train_target_cat, test_target_cat = torch.tensor(np.array(list_train_Y).flatten()), torch.tensor(np.array(list_test_Y).flatten())
-    train_nmse = (train_error_square_sum / train_error_length) / (train_target_cat - train_pred_mean_cat.mean()).square().mean()
-    test_nmse = (test_error_square_sum / test_error_length) / (test_target_cat - test_pred_mean_cat.mean()).square().mean()
     
     with open(results_txt, 'a') as file:
-        file.write('Evaluation on normalized data:\n')
-        file.write(f'global train rmse is {((train_error_square_sum / train_error_length).sqrt()):.4g}\n')
-        file.write(f'global test rmse is {((test_error_square_sum / test_error_length).sqrt()):.4g}\n')
-        file.write(f'global train nmse is {(train_nmse):.4g}\n')
-        file.write(f'global test nmse is {(test_nmse):.4g}\n')
-        file.write(f'global train nll is {(train_nll_sum / train_error_length):.4g}\n')
-        file.write(f'global test nll is {(test_nll_sum / test_error_length):.4g}\n')
+        file.write('Evaluation on NORMALIZED data:\n')
+        for key, value in norm_results_dict.items():
+            file.write(f'global {key} is {value:.4g}\n')
+
         if means != None:
-            file.write('Evaluation on original data:\n')
-            file.write(f'global train rmse is {((original_train_error_square_sum / train_error_length).sqrt()):.4g}\n')
-            file.write(f'global test rmse is {((original_test_error_square_sum / test_error_length).sqrt()):.4g}\n')
-            file.write(f'global train nll is {(original_train_nll_sum / train_error_length):.4g}\n')
-            file.write(f'global test nll is {(original_test_nll_sum / test_error_length):.4g}\n')
+            file.write('Evaluation on ORIGINAL data:\n')
+            for key, value in origin_results_dict.items():
+                file.write(f'global {key} is {value:.4g}\n')
+     
 
 ################################################   Init Model and Likelihood : Helper Function  ################################################
 def helper_init_latent_kernel(my_model, gplvm_model):
@@ -757,4 +685,109 @@ def adjust_lr(optimizer, iter, warm_up_period1=1000, warm_up_period2=1000, final
     elif iter >= (warm_up_period1 + warm_up_period2):
         for param_group in optimizer.param_groups:
             param_group['lr'] = final_lr
+
+def helper_eval_multiIndepSVGP_model(multi_IndepSVGP,
+                                    data, # organized as [list_train_X, list_test_X, list_train_Y, list_test_Y]
+                                    config, means=None, stds=None):
+    
+    list_train_X, list_test_X, list_train_Y, list_test_Y = data
+
+    all_train_pred_means, all_test_pred_means, all_train_pred_vars, all_test_pred_vars = [], [], [], []
+    origin_all_train_pred_means, origin_all_test_pred_means, origin_all_train_pred_vars, origin_all_test_pred_vars, origin_all_train_target, origin_all_test_target = [], [], [], [], [], []
+
+    for j in range(config['n_outputs']):
+
+        curr_model = multi_IndepSVGP.get_model(j)
+        curr_likelihood = multi_IndepSVGP.get_likelihood(j)
+
+        curr_model.eval()
+        curr_likelihood.eval()
+
+        # Inference for train and test input data
+        with torch.no_grad():
+            curr_train_output_dist = curr_likelihood(curr_model(list_train_X[j]))
+            curr_test_output_dist  = curr_likelihood(curr_model(list_test_X[j]))
+
+        # NORMALIZED data
+        all_train_pred_means.append(curr_train_output_dist.loc.detach())
+        all_test_pred_means.append(curr_test_output_dist.loc.detach())
+        all_train_pred_vars.append(curr_train_output_dist.variance.detach())
+        all_test_pred_vars.append(curr_test_output_dist.variance.detach())
+
+        if means != None:
+            # ORIGINAL data
+            origin_all_train_pred_means.append(curr_train_output_dist.loc.detach() * stds[j].item() + means[j].item())
+            origin_all_test_pred_means.append(curr_test_output_dist.loc.detach() * stds[j].item() + means[j].item())
+            origin_all_train_pred_vars.append(curr_train_output_dist.variance.detach() * (stds[j].item() ** 2))
+            origin_all_test_pred_vars.append(curr_test_output_dist.variance.detach() * (stds[j].item() ** 2))
+            origin_all_train_target.append(list_train_Y[j] * stds[j].item() + means[j].item())
+            origin_all_test_target.append(list_test_Y[j] * stds[j].item() + means[j].item())
+
+    # Cat togther as a whole tensor
+    ## NORMALIZED data
+    all_train_pred_means = torch.cat(all_train_pred_means, dim=0)
+    all_test_pred_means = torch.cat(all_test_pred_means, dim=0)
+    all_train_pred_vars = torch.cat(all_train_pred_vars, dim=0)
+    all_test_pred_vars = torch.cat(all_test_pred_vars, dim=0)
+
+    all_train_target = torch.cat(list_train_Y, dim=0)
+    all_test_target = torch.cat(list_test_Y, dim=0)
+
+    ## ORIGINAL data
+    if means != None:
+        origin_all_train_pred_means = torch.cat(origin_all_train_pred_means, dim=0)
+        origin_all_test_pred_means = torch.cat(origin_all_test_pred_means, dim=0)
+        origin_all_train_pred_vars = torch.cat(origin_all_train_pred_vars, dim=0)
+        origin_all_test_pred_vars = torch.cat(origin_all_test_pred_vars, dim=0)
+        origin_all_train_target = torch.cat(origin_all_train_target, dim=0)
+        origin_all_test_target = torch.cat(origin_all_test_target, dim=0)
+
+    ### On NORMALIZED data
+
+    # RMSE
+    norm_train_rmse = root_mean_square_error(Target=all_train_target, pred=all_train_pred_means)
+    norm_test_rmse = root_mean_square_error(Target=all_test_target, pred=all_test_pred_means)
+    # NLL
+    norm_train_nll = neg_log_likelihood(Target=all_train_target, GaussianMean=all_train_pred_means, GaussianVar=all_train_pred_vars)
+    norm_test_nll = neg_log_likelihood(Target=all_test_target, GaussianMean=all_test_pred_means, GaussianVar=all_test_pred_vars)
+    # NMSE
+    norm_train_nmse = normalised_mean_square_error(Target=all_train_target, pred=all_train_pred_means)
+    norm_test_nmse = normalised_mean_square_error(Target=all_test_target, pred=all_test_pred_means)
+
+    ### On ORIGINAL data
+    if means != None:
+        # RMSE
+        origin_train_rmse = root_mean_square_error(Target=origin_all_train_target, pred=origin_all_train_pred_means)
+        origin_test_rmse = root_mean_square_error(Target=origin_all_test_target, pred=origin_all_test_pred_means)
+        # NLL
+        origin_train_nll = neg_log_likelihood(Target=origin_all_train_target, GaussianMean=origin_all_train_pred_means, GaussianVar=origin_all_train_pred_vars)
+        origin_test_nll = neg_log_likelihood(Target=origin_all_test_target, GaussianMean=origin_all_test_pred_means, GaussianVar=origin_all_test_pred_vars)
+        # NMSE
+        origin_train_nmse = normalised_mean_square_error(Target=origin_all_train_target, pred=origin_all_train_pred_means)
+        origin_test_nmse = normalised_mean_square_error(Target=origin_all_test_target, pred=origin_all_test_pred_means)
+
+    
+    norm_result_dict = {
+        'norm_train_rmse': norm_train_rmse,
+        'norm_test_rmse': norm_test_rmse,
+        'norm_train_nll': norm_train_nll,
+        'norm_test_nll': norm_test_nll,
+        'norm_train_nmse': norm_train_nmse,
+        'norm_test_nmse': norm_test_nmse
+        }
+    
+    if means == None:
+        return norm_result_dict, None
+    
+    
+    origin_result_dict = {
+        'origin_train_rmse': origin_train_rmse,
+        'origin_test_rmse': origin_test_rmse,
+        'origin_train_nll': origin_train_nll,
+        'origin_test_nll': origin_test_nll,
+        'origin_train_nmse': origin_train_nmse,
+        'origin_test_nmse':origin_test_nmse
+        }
+
+    return norm_result_dict, origin_result_dict
     
