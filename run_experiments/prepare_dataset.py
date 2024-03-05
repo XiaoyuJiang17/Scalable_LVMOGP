@@ -106,13 +106,102 @@ def prepare_mocap_data(config):
 def prepare_sliced_mocap_data(config):
     '''
     Prepare MOCAP dataset.
-        Pick some outputs, mask a continuous part for each of them during training (used for test).
+        Pick some outputs, mask a continuous part (either first 1/3, middle 1/3 or last 1/3) for each of them during training (used for test).
         Some of outputs are entirely used for training (no test points).
     '''
+    def split_list_equally(input_list, num_splits=4, seed=1):
+
+        random.seed(seed)
+        random.shuffle(input_list)
+        # split_size = len(input_list) // num_splits
+        lists = [[] for _ in range(num_splits)]
+
+        for i, item in enumerate(input_list):
+            lists[i % num_splits].append(item)
+
+        return lists
     
-    return None
+    data_Y = torch.tensor(pd.read_csv(config['data_Y_path'], index_col=0).to_numpy())
 
+    n_outputs, n_input = data_Y.shape[0], data_Y.shape[-1]
+    assert n_outputs == config['n_outputs']
+    assert n_input == config['n_input']
 
+    translate_bias = config['min_input_bound']
+    translate_scale = (config['max_input_bound'] - config['min_input_bound']) / config['n_input']
+    data_inputs =  translate_bias + translate_scale * ( torch.tensor([i for i in range(config['n_input'])]) )
+
+    all_output_idxs = [i for i in range(config['n_outputs'])]
+    no_missing_output_idx, first_missing_output_idx, second_missing_output_idx, last_missing_output_idx = split_list_equally(all_output_idxs, num_splits=4)
+
+    ls_of_ls_train_input = []
+    ls_of_ls_test_input = []
+    all_inputs_idx = [i for i in range(config['n_input'])]
+    first_split, second_split = int(config['n_input']/3), int(config['n_input']*2/3)
+
+    means, stds = torch.zeros(config['n_outputs']), torch.zeros(config['n_outputs'])
+
+    train_sample_idx_ls, test_sample_idx_ls = [], []
+
+    for id in range(config['n_outputs']):
+
+        if id in no_missing_output_idx:
+            # all inputs used for training
+            train_index, test_index = all_inputs_idx, []
+            ls_of_ls_train_input.append(train_index)
+            ls_of_ls_test_input.append(test_index)
+
+            means[id] = data_Y[id, train_index].mean()
+            stds[id] = data_Y[id, train_index].std()
+            data_Y[id, :] = (data_Y[id, :] - means[id]) / (stds[id] + 1e-8)
+
+            train_sample_idx_ls = np.concatenate((train_sample_idx_ls, list(np.array(train_index) + config['n_input']*id)))
+            test_sample_idx_ls = np.concatenate((test_sample_idx_ls, list(np.array(test_index) + config['n_input']*id)))
+        
+        elif id in first_missing_output_idx:
+            # first 1/3 used for testing, remaining parts for training
+            train_index, test_index = all_inputs_idx[first_split:], all_inputs_idx[:first_split]
+            ls_of_ls_train_input.append(train_index)
+            ls_of_ls_test_input.append(test_index)
+
+            means[id] = data_Y[id, train_index].mean()
+            stds[id] = data_Y[id, train_index].std()
+            data_Y[id, :] = (data_Y[id, :] - means[id]) / (stds[id] + 1e-8)
+
+            train_sample_idx_ls = np.concatenate((train_sample_idx_ls, list(np.array(train_index) + config['n_input']*id)))
+            test_sample_idx_ls = np.concatenate((test_sample_idx_ls, list(np.array(test_index) + config['n_input']*id)))
+        
+        elif id in second_missing_output_idx:
+            # second 1/3 used for testing, remaining parts for training
+            test_index = all_inputs_idx[first_split:second_split]
+            train_index = [i for i in all_inputs_idx if i not in test_index]
+            ls_of_ls_train_input.append(train_index)
+            ls_of_ls_test_input.append(test_index)
+
+            means[id] = data_Y[id, train_index].mean()
+            stds[id] = data_Y[id, train_index].std()
+            data_Y[id, :] = (data_Y[id, :] - means[id]) / (stds[id] + 1e-8)
+
+            train_sample_idx_ls = np.concatenate((train_sample_idx_ls, list(np.array(train_index) + config['n_input']*id)))
+            test_sample_idx_ls = np.concatenate((test_sample_idx_ls, list(np.array(test_index) + config['n_input']*id)))
+        
+        elif id in last_missing_output_idx:
+            # last 1/3 used for testing, remaining parts for training 
+            train_index, test_index = all_inputs_idx[:second_split], all_inputs_idx[second_split:]
+            ls_of_ls_train_input.append(train_index)
+            ls_of_ls_test_input.append(test_index)
+
+            means[id] = data_Y[id, train_index].mean()
+            stds[id] = data_Y[id, train_index].std()
+            data_Y[id, :] = (data_Y[id, :] - means[id]) / (stds[id] + 1e-8)
+
+            train_sample_idx_ls = np.concatenate((train_sample_idx_ls, list(np.array(train_index) + config['n_input']*id)))
+            test_sample_idx_ls = np.concatenate((test_sample_idx_ls, list(np.array(test_index) + config['n_input']*id)))
+    
+    data_Y_squeezed = data_Y.reshape(-1)
+    assert data_Y_squeezed.shape[0] == (config['n_input'] * config['n_outputs'])
+
+    return data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, train_sample_idx_ls, test_sample_idx_ls, means, stds
 
 
 def prepare_exchange_data(config):

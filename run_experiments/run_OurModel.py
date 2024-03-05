@@ -4,6 +4,7 @@ import sys
 sys.path.append('/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/')
 from run_experiments.prepare_dataset import *
 from run_experiments.utils import *
+from utils_general import check_model_config
 from gplvm_init import specify_gplvm, train_gplvm
 from code_blocks.our_models.lvmogp_svi import LVMOGP_SVI
 from code_blocks.likelihoods.gaussian_likelihood import GaussianLikelihood, GaussianLikelihoodWithMissingObs
@@ -37,6 +38,10 @@ if __name__ == "__main__":
     with open(curr_config, 'r') as file: 
         config = yaml.safe_load(file) 
 
+    # Check setting correctness
+    # whether the model is defined in a wrong way, such as some hyper-parameter contradict with each other ... 
+    check_model_config(config)
+
     ### Create folder to save results
     root_folder_path = '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/experiments_results' 
     results_folder_path = os.path.join(root_folder_path, curr_config_name, f"{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}") 
@@ -57,6 +62,9 @@ if __name__ == "__main__":
 
     elif config['dataset_type'] == 'mocap':
         data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, train_sample_idx_ls, test_sample_idx_ls, means, stds = prepare_mocap_data(config)
+    
+    elif config['dataset_type'] == 'sliced_mocap':
+        data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, train_sample_idx_ls, test_sample_idx_ls, means, stds = prepare_sliced_mocap_data(config)
     
     elif config['dataset_type'] == 'exchange':
         data_inputs, data_Y_squeezed, ls_of_ls_train_input, ls_of_ls_test_input, train_sample_idx_ls, test_sample_idx_ls, means, stds = prepare_exchange_data(config)
@@ -87,7 +95,7 @@ if __name__ == "__main__":
                 data_Y = data_Y_squeezed.reshape(config['n_outputs'], config['n_input'])
                 data_Y[:, config['n_input_train']:] = torch.nan
 
-            elif config['dataset_type'] in ['synthetic_regression', 'mocap', 'exchange', 'egg']:
+            elif config['dataset_type'] in ['synthetic_regression', 'mocap', 'sliced_mocap', 'exchange', 'egg']:
                 data_Y_squeezed_copy = data_Y_squeezed.clone()
                 data_Y_squeezed_copy[test_sample_idx_ls] = torch.nan
                 data_Y = data_Y_squeezed_copy.reshape(config['n_outputs'], config['n_input'])

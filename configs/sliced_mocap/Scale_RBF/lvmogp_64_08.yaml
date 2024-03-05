@@ -1,5 +1,5 @@
 # data
-dataset_type: mocap
+dataset_type: sliced_mocap
 data_Y_path: '/Users/jiangxiaoyu/Desktop/All Projects/Scalable_LVMOGP/data/CMU_motion_capture/csv_files/64_08amc.csv'
 
 # input
@@ -10,8 +10,8 @@ max_input_bound: 20
 gplvm_init: True
 n_outputs: 56
 n_input: 364
-n_input_train: 8  #  # of train inputs for every output  
-n_input_test: 356   #  # of test inputs for every output  
+n_input_train: 364  #  # of train inputs for every output 
+number_all_train_data: 15288 # 364 * 14 + 243 * 28 + 242 * 14 
 input_dim: 1
 latent_dim: 2
 trainable_latent_dim: 2
@@ -24,7 +24,6 @@ n_inducing_input: 30
 n_inducing_latent: 50
 batch_size_latent: 50
 batch_size_input:  20
-pca: False
 learn_inducing_locations_latent: True
 learn_inducing_locations_input: True
 latent_kernel_type: 'Scale_RBF'

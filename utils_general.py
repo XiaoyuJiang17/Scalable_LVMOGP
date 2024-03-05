@@ -515,3 +515,14 @@ def  plot_traindata_testdata_fittedgp(train_X: torch.tensor,
     plt.show()
 
     return None
+
+
+def check_model_config(config):
+    # Check whether a given config is valid.
+    # for instance, if we choose sliced_mocap, egg, or exchange dataset, we MUST specify hyperparameter number_all_train_data
+    
+    if config['dataset_type'] in ['sliced_mocap', 'egg', 'exchange']:
+        if 'number_all_train_data' not in config:
+            raise ValueError('Not valid config! Variable number_all_train_data should be provided!')
+    
+    print('ALL check pass! This is a valid config. ')
